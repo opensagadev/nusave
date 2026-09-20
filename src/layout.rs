@@ -10,15 +10,11 @@ pub struct SaveHeader {
     pub field3_0x0c: I32,
     pub field4_0x10: I32,
     pub extra_data_offset: I32,
-    pub field6_0x18: [u8; 16],
-    pub field7_0x28: I16,
-    pub field8_0x2a: [u8; 2046],
-    pub field9_0x828: I16,
-    pub field10_0x82a: [u8; 2046],
-    pub field11_0x1028: I16,
-    pub field12_0x102a: [u8; 2046],
-    pub field13_0x1828: I16,
-    pub field14_0x182a: [u8; 2046],
+    pub platform_data: [u8; 16],
+    pub application_metadata: [u8; 0x800],
+    pub slot_metadata: [u8; 0x800],
+    pub reserved_metadata: [u8; 0x800],
+    pub timestamp_metadata: [u8; 0x800],
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
@@ -94,7 +90,7 @@ pub struct MissionSave {
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
-pub struct GameSave {
+pub struct GameSavePrefix {
     pub field_0x0: u8,
     pub difficulty: u8,
     pub field_0x2: [u8; 2],
@@ -110,6 +106,11 @@ pub struct GameSave {
     pub suit_flags: U32,
     pub extra_purchased_bits: [U32; 2],
     pub hint_completion_bits: [U32; 6],
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+pub struct AndroidProgressSummary {
     pub coins: U32,
     pub completion: U16,
     pub gold_bricks: u8,
@@ -117,11 +118,33 @@ pub struct GameSave {
     pub hub_build_flags: u8,
     pub indy_unlocked: u8,
     pub reserved_0x7c2a: [u8; 2],
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+pub struct GameSaveSuffix {
     pub gameplay_seconds: F32,
     pub customizer: CustomiseSave,
-    pub field_0x7c9f: u8,
+    pub field_after_customizer: u8,
     pub mission: MissionSave,
     pub characters: [u8; 0x154],
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+pub struct GameSave {
+    pub prefix: GameSavePrefix,
+    pub android_summary: AndroidProgressSummary,
+    pub suffix: GameSaveSuffix,
+}
+
+/// Original Windows PC payload: the common prefix and suffix without the
+/// later 12-byte Android progress-summary block between them.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+pub struct WindowsGameSave {
+    pub prefix: GameSavePrefix,
+    pub suffix: GameSaveSuffix,
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
@@ -147,6 +170,10 @@ const _: () = {
     assert!(size_of::<EpisodeSave>() == 0x0c);
     assert!(size_of::<CustomiseSave>() == 0x6f);
     assert!(size_of::<MissionSave>() == 0x64);
+    assert!(size_of::<GameSavePrefix>() == 0x7c20);
+    assert!(size_of::<AndroidProgressSummary>() == 0x0c);
+    assert!(size_of::<GameSaveSuffix>() == 0x22c);
     assert!(size_of::<GameSave>() == 0x7e58);
+    assert!(size_of::<WindowsGameSave>() == 0x7e4c);
     assert!(size_of::<SuperOptions>() == 0x18);
 };

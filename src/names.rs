@@ -1,95 +1,7 @@
-pub const SHOP_CHARACTER_BITS: &[(&str, usize)] = &[
-    ("gonkdroid", 0),
-    ("pkdroid", 1),
-    ("battledroid", 2),
-    ("battledroid_security", 3),
-    ("battledroid_commander", 4),
-    ("destroyer", 5),
-    ("captaintarpals", 6),
-    ("bossnass", 7),
-    ("royalguard", 8),
-    ("padme", 9),
-    ("watto", 10),
-    ("pitdroid", 11),
-    ("darthmaul", 12),
-    ("zamwesell", 13),
-    ("dexter", 14),
-    ("clone", 15),
-    ("lamasu", 16),
-    ("taunwe", 17),
-    ("geonosian", 18),
-    ("battledroid_geonosian", 19),
-    ("superbattledroid", 20),
-    ("jangofett", 21),
-    ("bobafett_boy", 22),
-    ("luminara", 23),
-    ("kiadimundi", 24),
-    ("kitfisto", 25),
-    ("shaakti", 26),
-    ("aylasecura", 27),
-    ("plokoon", 28),
-    ("countdooku", 29),
-    ("bodyguard", 30),
-    ("grievous", 31),
-    ("wookie", 32),
-    ("clone_ep3", 33),
-    ("clone_ep3_pilot", 34),
-    ("clone_ep3_swamp", 35),
-    ("clone_ep3_walker", 36),
-    ("disguisedclone", 37),
-    ("macewindu_ep3", 38),
-    ("anakin_jedi_scarred", 39),
-    ("rebelscum", 40),
-    ("stormtrooper", 41),
-    ("imperialshuttlepilot", 42),
-    ("tuskenraider", 43),
-    ("jawa", 44),
-    ("sandtrooper", 45),
-    ("greedo", 46),
-    ("imperialspy", 47),
-    ("beachtrooper", 48),
-    ("deathstartrooper", 49),
-    ("tiefighterpilot", 50),
-    ("imperialofficer", 51),
-    ("grandmofftarkin", 52),
-    ("hansolo_hood", 53),
-    ("rebelhoth", 54),
-    ("rebelpilot", 55),
-    ("snowtrooper", 56),
-    ("lukeskywalker_hoth", 57),
-    ("lobot", 58),
-    ("ugnaught", 59),
-    ("bespinguard", 60),
-    ("princessleia_prisoner", 61),
-    ("gamorreanguard", 62),
-    ("bibfortuna", 63),
-    ("palaceguard", 64),
-    ("bossk", 65),
-    ("skiffguard", 66),
-    ("bobafett", 67),
-    ("ewok", 68),
-    ("imperialguard", 69),
-    ("theemperor", 70),
-    ("admiralackbar", 71),
-    ("ig88", 72),
-    ("dengar", 73),
-    ("4lom", 74),
-    ("ghostbenkenobi", 75),
-    ("anakin_ghost", 76),
-    ("yoda_ghost", 77),
-    ("r2q5", 78),
-    ("sebulbaspod", 79),
-    ("tiefighter", 80),
-    ("zamsspeeder", 81),
-    ("droidtrifighter", 82),
-    ("vulturedroid", 83),
-    ("clonearc", 84),
-    ("tieinterceptor", 85),
-    ("tiefighterdarth", 86),
-    ("tiebomber", 87),
-    ("imperialshuttle", 88),
-    ("slave1", 89),
-];
+use crate::format::SaveKind;
+
+const WINDOWS_SHOP_CHARACTER_NAMES: &str = include_str!("../data/pc/shop_character_names.txt");
+const ANDROID_SHOP_CHARACTER_NAMES: &str = include_str!("../data/android/shop_character_names.txt");
 
 pub const TUTORIAL_HINT_BITS: &[(&str, usize)] = &[
     ("hint_356", 0),
@@ -195,22 +107,23 @@ pub const EXTRA_NAMES: &[&str] = &[
     "scorex10",
 ];
 
-// Extracted in character-ID order from CHARS/CHARS.TXT in the PC GAME.DAT.
-// GAMESAVE_s reserves 340 state bytes; this game data defines IDs 0..318.
-const CHARACTER_NAMES: &str = include_str!("../data/character_names.txt");
+const WINDOWS_CHARACTER_NAMES: &str = include_str!("../data/pc/character_names.txt");
+const ANDROID_CHARACTER_NAMES: &str = include_str!("../data/android/character_names.txt");
 const CUSTOMIZER_PIECES: &str = include_str!("../data/customizer_pieces.tsv");
-const AREA_NAMES: &str = include_str!("../data/area_names.txt");
-const LEVEL_NAMES: &str = include_str!("../data/level_names.txt");
+const WINDOWS_AREA_NAMES: &str = include_str!("../data/pc/area_names.txt");
+const ANDROID_AREA_NAMES: &str = include_str!("../data/android/area_names.txt");
+const WINDOWS_LEVEL_NAMES: &str = include_str!("../data/pc/level_names.txt");
+const ANDROID_LEVEL_NAMES: &str = include_str!("../data/android/level_names.txt");
 const MISSION_NAMES: &str = include_str!("../data/mission_names.txt");
 
 pub const CUSTOMIZER_CATEGORIES: [&str; 9] = [
     "Hat / hair",
     "Head",
-    "Cape",
-    "Body",
+    "Weapon",
     "Arms",
     "Hands",
-    "Weapon",
+    "Cape",
+    "Body",
     "Underpants",
     "Legs",
 ];
@@ -221,19 +134,37 @@ pub struct CustomizerPiece {
     pub source_character: Option<&'static str>,
 }
 
-pub fn character_name(id: usize) -> Option<&'static str> {
-    CHARACTER_NAMES.lines().nth(id)
+fn names_for_kind(kind: SaveKind, windows: &'static str, android: &'static str) -> &'static str {
+    match kind {
+        SaveKind::WindowsGame => windows,
+        SaveKind::AndroidGame | SaveKind::AndroidOptions => android,
+    }
+}
+
+pub fn shop_character_names(kind: SaveKind) -> impl Iterator<Item = &'static str> {
+    names_for_kind(
+        kind,
+        WINDOWS_SHOP_CHARACTER_NAMES,
+        ANDROID_SHOP_CHARACTER_NAMES,
+    )
+    .lines()
+}
+
+pub fn character_name(kind: SaveKind, id: usize) -> Option<&'static str> {
+    names_for_kind(kind, WINDOWS_CHARACTER_NAMES, ANDROID_CHARACTER_NAMES)
+        .lines()
+        .nth(id)
 }
 
 pub fn customizer_piece(category: usize, index: i16) -> Option<CustomizerPiece> {
     let category = [
         "hathair",
         "head",
-        "cape",
-        "body",
+        "weapon",
         "arms",
         "hands",
-        "weapon",
+        "cape",
+        "body",
         "underpants",
         "legs",
     ]
@@ -251,12 +182,16 @@ pub fn customizer_piece(category: usize, index: i16) -> Option<CustomizerPiece> 
         .nth(index)
 }
 
-pub fn area_name(index: usize) -> Option<&'static str> {
-    AREA_NAMES.lines().nth(index)
+pub fn area_name(kind: SaveKind, index: usize) -> Option<&'static str> {
+    names_for_kind(kind, WINDOWS_AREA_NAMES, ANDROID_AREA_NAMES)
+        .lines()
+        .nth(index)
 }
 
-pub fn level_name(index: usize) -> Option<&'static str> {
-    LEVEL_NAMES.lines().nth(index)
+pub fn level_name(kind: SaveKind, index: usize) -> Option<&'static str> {
+    names_for_kind(kind, WINDOWS_LEVEL_NAMES, ANDROID_LEVEL_NAMES)
+        .lines()
+        .nth(index)
 }
 
 pub fn mission_name(index: usize) -> Option<&'static str> {
@@ -265,25 +200,43 @@ pub fn mission_name(index: usize) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{area_name, character_name, customizer_piece, level_name, mission_name};
+    use super::{
+        area_name, character_name, customizer_piece, level_name, mission_name, shop_character_names,
+    };
+    use crate::format::SaveKind;
 
     #[test]
     fn character_names_follow_chars_txt_ids() {
-        assert_eq!(character_name(0), Some("slave1_lsw1"));
-        assert_eq!(character_name(104), Some("QuiGonJinn"));
-        assert_eq!(character_name(318), Some("raft"));
-        assert_eq!(character_name(319), None);
-        assert_eq!(character_name(339), None);
+        assert_eq!(
+            character_name(SaveKind::WindowsGame, 0),
+            Some("slave1_lsw1")
+        );
+        assert_eq!(
+            character_name(SaveKind::WindowsGame, 104),
+            Some("QuiGonJinn")
+        );
+        assert_eq!(character_name(SaveKind::WindowsGame, 307), Some("Whip"));
+        assert_eq!(
+            character_name(SaveKind::WindowsGame, 317),
+            Some("hansolo_indy")
+        );
+        assert_eq!(character_name(SaveKind::AndroidGame, 307), Some("WA7"));
+        assert_eq!(character_name(SaveKind::AndroidGame, 317), Some("plokoon"));
+        assert_eq!(character_name(SaveKind::AndroidGame, 318), Some("raft"));
+        assert_eq!(character_name(SaveKind::AndroidGame, 319), None);
+        assert_eq!(character_name(SaveKind::WindowsGame, 339), None);
     }
 
     #[test]
     fn configured_save_indices_have_game_data_names() {
-        assert_eq!(area_name(0), Some("Negotiations"));
-        assert_eq!(area_name(69), Some("LostTemple"));
-        assert_eq!(area_name(70), None);
-        assert_eq!(level_name(0), Some("titles"));
-        assert_eq!(level_name(349), Some("LostTemple_A"));
-        assert_eq!(level_name(350), None);
+        assert_eq!(area_name(SaveKind::WindowsGame, 0), Some("Negotiations"));
+        assert_eq!(area_name(SaveKind::WindowsGame, 69), Some("LostTemple"));
+        assert_eq!(area_name(SaveKind::WindowsGame, 70), None);
+        assert_eq!(area_name(SaveKind::AndroidGame, 70), Some("Vehicles"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 0), Some("titles"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 349), Some("LostTemple_A"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 350), None);
+        assert_eq!(level_name(SaveKind::AndroidGame, 350), Some("Platform"));
         assert_eq!(mission_name(0), Some("QuiGonJinn"));
         assert_eq!(mission_name(19), Some("hansolo"));
         assert_eq!(mission_name(20), None);
@@ -291,8 +244,28 @@ mod tests {
         let piece = customizer_piece(0, 1).unwrap();
         assert_eq!(piece.name, "hat_hair_01");
         assert_eq!(piece.source_character, Some("QuiGonJinn"));
+        assert_eq!(customizer_piece(2, 5).unwrap().name, "blaster_blue");
+        assert_eq!(customizer_piece(6, 49).unwrap().name, "Body_50");
         assert_eq!(customizer_piece(8, 34).unwrap().name, "leg_35");
         assert_eq!(customizer_piece(8, 35), None);
         assert_eq!(customizer_piece(0, -1), None);
+    }
+
+    #[test]
+    fn shop_bit_order_is_selected_by_release() {
+        assert_eq!(
+            shop_character_names(SaveKind::WindowsGame).nth(37),
+            Some("macewindu_ep3")
+        );
+        assert_eq!(shop_character_names(SaveKind::WindowsGame).count(), 88);
+        assert_eq!(
+            shop_character_names(SaveKind::AndroidGame).nth(37),
+            Some("disguisedclone")
+        );
+        assert_eq!(
+            shop_character_names(SaveKind::AndroidGame).nth(39),
+            Some("anakin_jedi_scarred")
+        );
+        assert_eq!(shop_character_names(SaveKind::AndroidGame).count(), 90);
     }
 }

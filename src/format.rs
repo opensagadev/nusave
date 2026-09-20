@@ -8,7 +8,10 @@ use zerocopy::FromBytes;
 use zerocopy::byteorder::little_endian::U32;
 
 pub const HEADER_SIZE: usize = 0x2028;
-pub const GAME_SIZE: usize = 0x7e58;
+pub const ANDROID_GAME_SIZE: usize = 0x7e58;
+pub const WINDOWS_GAME_SIZE: usize = 0x7e4c;
+/// Size used when creating a new game save. New saves target the Android layout.
+pub const GAME_SIZE: usize = ANDROID_GAME_SIZE;
 pub const OPTIONS_SIZE: usize = 0x18;
 const MAX_SAVE_SIZE: u64 = 16 * 1024 * 1024;
 
@@ -39,13 +42,43 @@ pub enum ParseError {
         file_size: usize,
     },
     #[error(
-        "unsupported payload size {found} bytes; expected {game} for a game save or {options} for SuperOptions"
+        "unsupported payload size {found} bytes; expected {windows_game} for a Windows game save, {android_game} for an Android game save, or {options} for Android SuperOptions"
     )]
     UnsupportedPayloadSize {
         found: usize,
-        game: usize,
+        windows_game: usize,
+        android_game: usize,
         options: usize,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SaveKind {
+    WindowsGame,
+    AndroidGame,
+    AndroidOptions,
+}
+
+impl SaveKind {
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::WindowsGame => "Windows PC game progress",
+            Self::AndroidGame => "Android game progress",
+            Self::AndroidOptions => "Android SuperOptions",
+        }
+    }
+
+    pub fn is_game(self) -> bool {
+        matches!(self, Self::WindowsGame | Self::AndroidGame)
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct HeaderMetadata {
+    pub application: Option<String>,
+    pub slot: Option<String>,
+    pub reserved: Option<String>,
+    pub timestamp: Option<String>,
 }
 
 /// A save could not be loaded from disk.
@@ -193,10 +226,14 @@ impl Save {
             });
         }
         let payload_size = bytes.len() - payload - 8;
-        if payload_size != GAME_SIZE && payload_size != OPTIONS_SIZE {
+        if payload_size != ANDROID_GAME_SIZE
+            && payload_size != WINDOWS_GAME_SIZE
+            && payload_size != OPTIONS_SIZE
+        {
             return Err(ParseError::UnsupportedPayloadSize {
                 found: payload_size,
-                game: GAME_SIZE,
+                windows_game: WINDOWS_GAME_SIZE,
+                android_game: ANDROID_GAME_SIZE,
                 options: OPTIONS_SIZE,
             });
         }
@@ -256,15 +293,15 @@ impl Save {
                 GameSave::mut_from_bytes(&mut save.bytes[HEADER_SIZE..HEADER_SIZE + GAME_SIZE])
                     .expect("new game payload has the exact game layout size");
             // Deterministic NewGame state before any game assets are configured.
-            game.difficulty = 5;
-            game.areas[0].complete = 1;
-            for episode in &mut game.episodes {
+            game.prefix.difficulty = 5;
+            game.prefix.areas[0].complete = 1;
+            for episode in &mut game.prefix.episodes {
                 episode.superstory_time_limit.set(3600.0);
                 episode.superstory_score_target.set(100_000);
             }
-            game.suit_flags.set(0x21);
-            game.customizer.primary_use_saved_name = 1;
-            game.customizer.secondary_use_saved_name = 1;
+            game.prefix.suit_flags.set(0x21);
+            game.suffix.customizer.primary_use_saved_name = 1;
+            game.suffix.customizer.secondary_use_saved_name = 1;
         }
         save.derive();
         save
@@ -295,17 +332,46 @@ impl Save {
     pub fn derive(&mut self) {
         let checksum_offset = self.payload + self.payload_size;
         self.write_u32(checksum_offset, self.checksum());
-        let slot_code = if self.payload_size == GAME_SIZE {
-            let game = GameSave::ref_from_bytes(
-                &self.bytes[self.payload..self.payload + self.payload_size],
-            )
-            .expect("validated game payload");
-            let completion = game.completion.get();
-            (completion as i16 as i32) as u32
-        } else {
-            u32::MAX
+        let slot_code = match self.kind() {
+            SaveKind::AndroidGame => {
+                let game = GameSave::ref_from_bytes(
+                    &self.bytes[self.payload..self.payload + self.payload_size],
+                )
+                .expect("validated Android game payload");
+                let completion = game.android_summary.completion.get();
+                (completion as i16 as i32) as u32
+            }
+            // The PC payload has no copy of the completion value used to make
+            // its slot code. Preserve the real stored value when other fields
+            // are edited instead of inventing one.
+            SaveKind::WindowsGame => self.read_u32(self.bytes.len() - 4),
+            SaveKind::AndroidOptions => u32::MAX,
         };
         self.write_u32(self.bytes.len() - 4, slot_code);
+    }
+
+    pub fn kind(&self) -> SaveKind {
+        match self.payload_size {
+            WINDOWS_GAME_SIZE => SaveKind::WindowsGame,
+            ANDROID_GAME_SIZE => SaveKind::AndroidGame,
+            OPTIONS_SIZE => SaveKind::AndroidOptions,
+            _ => unreachable!("Save can only contain a validated payload size"),
+        }
+    }
+
+    pub fn slot_code(&self) -> u32 {
+        self.read_u32(self.bytes.len() - 4)
+    }
+
+    pub fn header_metadata(&self) -> HeaderMetadata {
+        let (header, _) = SaveHeader::ref_from_prefix(&self.bytes)
+            .expect("validated save always contains a complete header");
+        HeaderMetadata {
+            application: utf16_prefix(&header.application_metadata),
+            slot: utf16_prefix(&header.slot_metadata),
+            reserved: utf16_prefix(&header.reserved_metadata),
+            timestamp: utf16_prefix(&header.timestamp_metadata),
+        }
     }
 
     pub fn read_u32(&self, offset: usize) -> u32 {
@@ -318,6 +384,21 @@ impl Save {
 
     pub fn write_u32(&mut self, offset: usize, value: u32) {
         self.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn utf16_prefix(bytes: &[u8]) -> Option<String> {
+    let units = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .take_while(|unit| *unit != 0)
+        .collect::<Vec<_>>();
+    if units.is_empty() {
+        None
+    } else {
+        Some(String::from_utf16_lossy(&units))
     }
 }
 

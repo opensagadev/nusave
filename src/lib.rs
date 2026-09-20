@@ -11,8 +11,8 @@ mod schema;
 use thiserror::Error;
 
 pub use format::{
-    GAME_SIZE, HEADER_SIZE, OPTIONS_SIZE, ParseError, ReadError, Save, WriteError, save_file_name,
-    write_atomic,
+    ANDROID_GAME_SIZE, GAME_SIZE, HEADER_SIZE, HeaderMetadata, OPTIONS_SIZE, ParseError, ReadError,
+    Save, SaveKind, WINDOWS_GAME_SIZE, WriteError, save_file_name, write_atomic,
 };
 pub use schema::{
     AssignmentError, Kind, Property, properties, property_description, raw_list_text, summary_text,

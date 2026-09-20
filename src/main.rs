@@ -11,7 +11,7 @@ use thiserror::Error;
 
 const AFTER_HELP: &str = "\
 Commands target slot 0 inside SAVEGAME_FOLDER unless --slot selects another slot.
-Slots 0..2 contain game progress; slot 3 contains the standalone SuperOptions record.
+Windows uses game slots 0..5. Android uses game slots 0..2 and SuperOptions slot 3.
 The default folder is res/SavedGames.
 List shows a compact interpreted summary; list --raw emits reusable assignments.
 
@@ -32,8 +32,8 @@ struct Cli {
     #[arg(value_name = "SAVEGAME_FOLDER", default_value = "res/SavedGames")]
     folder: PathBuf,
 
-    /// Save slot to read, edit, or create (game: 0..2; options: 3).
-    #[arg(long, global = true, value_parser = clap::value_parser!(u8).range(0..=3))]
+    /// Save slot to read, edit, or create (Windows: 0..5; Android options: 3).
+    #[arg(long, global = true, value_parser = clap::value_parser!(u8).range(0..=5))]
     slot: Option<u8>,
 
     #[command(subcommand)]

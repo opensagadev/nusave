@@ -1,11 +1,11 @@
-use crate::format::{GAME_SIZE, HEADER_SIZE, OPTIONS_SIZE, Save};
+use crate::format::{HEADER_SIZE, OPTIONS_SIZE, Save, SaveKind};
 use crate::layout::{
-    AreaSave, CustomiseSave, EpisodeSave, GameSave, LevelSave, MissionSave, OptionsSave,
-    SaveHeader, SuperOptions,
+    AndroidProgressSummary, AreaSave, CustomiseSave, EpisodeSave, GameSave, GameSavePrefix,
+    GameSaveSuffix, LevelSave, MissionSave, OptionsSave, SaveHeader, SuperOptions, WindowsGameSave,
 };
 use crate::names::{
-    CUSTOMIZER_CATEGORIES, EXTRA_NAMES, SHOP_CHARACTER_BITS, TUTORIAL_HINT_BITS, area_name,
-    character_name, customizer_piece, level_name, mission_name,
+    CUSTOMIZER_CATEGORIES, EXTRA_NAMES, TUTORIAL_HINT_BITS, area_name, character_name,
+    customizer_piece, level_name, mission_name, shop_character_names,
 };
 use anstyle::{AnsiColor, Style};
 use std::fmt::Write as _;
@@ -79,57 +79,33 @@ pub fn properties(save: &Save) -> Vec<Property> {
             Kind::Signed,
         ),
         property(
-            "header.field7_0x28",
-            offset_of!(SaveHeader, field7_0x28),
-            2,
-            Kind::Signed,
-        ),
-        property(
-            "header.field9_0x828",
-            offset_of!(SaveHeader, field9_0x828),
-            2,
-            Kind::Signed,
-        ),
-        property(
-            "header.field11_0x1028",
-            offset_of!(SaveHeader, field11_0x1028),
-            2,
-            Kind::Signed,
-        ),
-        property(
-            "header.field13_0x1828",
-            offset_of!(SaveHeader, field13_0x1828),
-            2,
-            Kind::Signed,
-        ),
-        property(
-            "header.field6_0x18",
-            offset_of!(SaveHeader, field6_0x18),
+            "header.platform_data",
+            offset_of!(SaveHeader, platform_data),
             16,
             Kind::Bytes,
         ),
         property(
-            "header.field8_0x2a",
-            offset_of!(SaveHeader, field8_0x2a),
-            2046,
+            "header.application_metadata",
+            offset_of!(SaveHeader, application_metadata),
+            0x800,
             Kind::Bytes,
         ),
         property(
-            "header.field10_0x82a",
-            offset_of!(SaveHeader, field10_0x82a),
-            2046,
+            "header.slot_metadata",
+            offset_of!(SaveHeader, slot_metadata),
+            0x800,
             Kind::Bytes,
         ),
         property(
-            "header.field12_0x102a",
-            offset_of!(SaveHeader, field12_0x102a),
-            2046,
+            "header.reserved_metadata",
+            offset_of!(SaveHeader, reserved_metadata),
+            0x800,
             Kind::Bytes,
         ),
         property(
-            "header.field14_0x182a",
-            offset_of!(SaveHeader, field14_0x182a),
-            2046,
+            "header.timestamp_metadata",
+            offset_of!(SaveHeader, timestamp_metadata),
+            0x800,
             Kind::Bytes,
         ),
     ];
@@ -142,125 +118,143 @@ pub fn properties(save: &Save) -> Vec<Property> {
         ));
     }
     let base = save.payload;
-    if save.payload_size == GAME_SIZE {
+    if save.kind().is_game() {
         result.extend([
             property(
                 "field_0x0",
-                base + offset_of!(GameSave, field_0x0),
+                base + offset_of!(GameSavePrefix, field_0x0),
                 1,
                 Kind::Unsigned,
             ),
             property(
                 "difficulty",
-                base + offset_of!(GameSave, difficulty),
+                base + offset_of!(GameSavePrefix, difficulty),
                 1,
                 Kind::Unsigned,
             ),
             property(
                 "field_0x2",
-                base + offset_of!(GameSave, field_0x2),
+                base + offset_of!(GameSavePrefix, field_0x2),
                 2,
                 Kind::Bytes,
             ),
             property(
                 "shop_gold_brick_purchased_bits",
-                base + offset_of!(GameSave, shop_gold_brick_purchased_bits),
+                base + offset_of!(GameSavePrefix, shop_gold_brick_purchased_bits),
                 4,
                 Kind::Bitmask,
             ),
             property(
                 "shop_hint_purchased_bits",
-                base + offset_of!(GameSave, shop_hint_purchased_bits),
+                base + offset_of!(GameSavePrefix, shop_hint_purchased_bits),
                 12,
                 Kind::Bitmask,
             ),
             property(
                 "shop_character_purchased_bits",
-                base + offset_of!(GameSave, shop_character_purchased_bits),
+                base + offset_of!(GameSavePrefix, shop_character_purchased_bits),
                 16,
                 Kind::Bitmask,
             ),
             property(
                 "extra_unlocked_bits",
-                base + offset_of!(GameSave, extra_unlocked_bits),
+                base + offset_of!(GameSavePrefix, extra_unlocked_bits),
                 8,
                 Kind::Bitmask,
             ),
             property(
                 "extra_purchased_bits",
-                base + offset_of!(GameSave, extra_purchased_bits),
+                base + offset_of!(GameSavePrefix, extra_purchased_bits),
                 8,
                 Kind::Bitmask,
             ),
             property(
                 "hint_completion_bits",
-                base + offset_of!(GameSave, hint_completion_bits),
+                base + offset_of!(GameSavePrefix, hint_completion_bits),
                 24,
                 Kind::Bitmask,
             ),
             property(
                 "suit_flags",
-                base + offset_of!(GameSave, suit_flags),
+                base + offset_of!(GameSavePrefix, suit_flags),
                 4,
                 Kind::Unsigned,
             ),
             property(
                 "level_save_padding",
-                base + offset_of!(GameSave, level_save_padding),
+                base + offset_of!(GameSavePrefix, level_save_padding),
                 3,
                 Kind::Bytes,
             ),
-            property(
-                "coins",
-                base + offset_of!(GameSave, coins),
-                4,
-                Kind::Unsigned,
-            ),
-            property(
-                "completion",
-                base + offset_of!(GameSave, completion),
-                2,
-                Kind::Unsigned,
-            ),
-            property(
-                "gold_bricks",
-                base + offset_of!(GameSave, gold_bricks),
-                1,
-                Kind::Unsigned,
-            ),
-            property(
-                "reward_flags",
-                base + offset_of!(GameSave, reward_flags),
-                1,
-                Kind::Unsigned,
-            ),
-            property(
-                "hub_build_flags",
-                base + offset_of!(GameSave, hub_build_flags),
-                1,
-                Kind::Unsigned,
-            ),
-            property(
-                "indy_unlocked",
-                base + offset_of!(GameSave, indy_unlocked),
-                1,
-                Kind::Unsigned,
-            ),
-            property(
-                "reserved_0x7c2a",
-                base + offset_of!(GameSave, reserved_0x7c2a),
-                2,
-                Kind::Bytes,
-            ),
+        ]);
+        if save.kind() == SaveKind::AndroidGame {
+            let summary = base + size_of::<GameSavePrefix>();
+            result.extend([
+                property(
+                    "coins",
+                    summary + offset_of!(AndroidProgressSummary, coins),
+                    4,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "completion",
+                    summary + offset_of!(AndroidProgressSummary, completion),
+                    2,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "gold_bricks",
+                    summary + offset_of!(AndroidProgressSummary, gold_bricks),
+                    1,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "reward_flags",
+                    summary + offset_of!(AndroidProgressSummary, reward_flags),
+                    1,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "hub_build_flags",
+                    summary + offset_of!(AndroidProgressSummary, hub_build_flags),
+                    1,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "indy_unlocked",
+                    summary + offset_of!(AndroidProgressSummary, indy_unlocked),
+                    1,
+                    Kind::Unsigned,
+                ),
+                property(
+                    "reserved_0x7c2a",
+                    summary + offset_of!(AndroidProgressSummary, reserved_0x7c2a),
+                    2,
+                    Kind::Bytes,
+                ),
+            ]);
+        }
+        let suffix = base
+            + size_of::<GameSavePrefix>()
+            + if save.kind() == SaveKind::AndroidGame {
+                size_of::<AndroidProgressSummary>()
+            } else {
+                0
+            };
+        result.extend([
             property(
                 "gameplay_seconds",
-                base + offset_of!(GameSave, gameplay_seconds),
+                suffix + offset_of!(GameSaveSuffix, gameplay_seconds),
                 4,
                 Kind::Float,
             ),
             property(
-                "field_0x7c9f",
-                base + offset_of!(GameSave, field_0x7c9f),
+                if save.kind() == SaveKind::AndroidGame {
+                    "field_0x7c9f"
+                } else {
+                    "field_0x7c93"
+                },
+                suffix + offset_of!(GameSaveSuffix, field_after_customizer),
                 1,
                 Kind::Unsigned,
             ),
@@ -282,14 +276,14 @@ pub fn properties(save: &Save) -> Vec<Property> {
         ] {
             result.push(property(
                 format!("options_save.{name}"),
-                base + offset_of!(GameSave, options) + offset,
+                base + offset_of!(GameSavePrefix, options) + offset,
                 1,
                 Kind::Unsigned,
             ));
         }
         for index in 0..366 {
             let prefix = format!("level_save[{index}].");
-            let offset = base + offset_of!(GameSave, levels) + index * size_of::<LevelSave>();
+            let offset = base + offset_of!(GameSavePrefix, levels) + index * size_of::<LevelSave>();
             for name_index in 0..10 {
                 result.push(property(
                     format!("{prefix}minikit_names[{name_index}]"),
@@ -320,7 +314,8 @@ pub fn properties(save: &Save) -> Vec<Property> {
         for index in 0..20 {
             result.push(property(
                 format!("mission_save.best_times[{index}]"),
-                base + offset_of!(GameSave, mission)
+                suffix
+                    + offset_of!(GameSaveSuffix, mission)
                     + offset_of!(MissionSave, best_times)
                     + index * 4,
                 4,
@@ -328,7 +323,10 @@ pub fn properties(save: &Save) -> Vec<Property> {
             ));
             result.push(property(
                 format!("mission_save.completed[{index}]"),
-                base + offset_of!(GameSave, mission) + offset_of!(MissionSave, completed) + index,
+                suffix
+                    + offset_of!(GameSaveSuffix, mission)
+                    + offset_of!(MissionSave, completed)
+                    + index,
                 1,
                 Kind::Unsigned,
             ));
@@ -336,14 +334,14 @@ pub fn properties(save: &Save) -> Vec<Property> {
         for index in 0..0x154 {
             result.push(property(
                 format!("character_save[{index}]"),
-                base + offset_of!(GameSave, characters) + index,
+                suffix + offset_of!(GameSaveSuffix, characters) + index,
                 1,
                 Kind::Unsigned,
             ));
         }
         for index in 0..72 {
             let prefix = format!("area_save[{index}].");
-            let offset = base + offset_of!(GameSave, areas) + index * size_of::<AreaSave>();
+            let offset = base + offset_of!(GameSavePrefix, areas) + index * size_of::<AreaSave>();
             for (name, member, kind) in [
                 ("complete", offset_of!(AreaSave, complete), Kind::Unsigned),
                 (
@@ -397,7 +395,8 @@ pub fn properties(save: &Save) -> Vec<Property> {
         }
         for index in 0..6 {
             let prefix = format!("episode_save[{index}].");
-            let offset = base + offset_of!(GameSave, episodes) + index * size_of::<EpisodeSave>();
+            let offset =
+                base + offset_of!(GameSavePrefix, episodes) + index * size_of::<EpisodeSave>();
             result.push(property(
                 format!("{prefix}superstory_time_limit"),
                 offset + offset_of!(EpisodeSave, superstory_time_limit),
@@ -417,7 +416,7 @@ pub fn properties(save: &Save) -> Vec<Property> {
                 Kind::Unsigned,
             ));
         }
-        let custom = base + offset_of!(GameSave, customizer);
+        let custom = suffix + offset_of!(GameSaveSuffix, customizer);
         for index in 0..9 {
             result.push(property(
                 format!("customizer.pieces[{index}]"),
@@ -581,13 +580,13 @@ pub fn properties(save: &Save) -> Vec<Property> {
     result
 }
 
-fn bit_names(field: &Property) -> Vec<String> {
+fn bit_names(kind: SaveKind, field: &Property) -> Vec<String> {
     let mut names: Vec<String> = (0..field.size * 8)
         .map(|bit| format!("BIT_{bit}"))
         .collect();
     match field.name.as_str() {
         "shop_character_purchased_bits" => {
-            for &(name, bit) in SHOP_CHARACTER_BITS {
+            for (bit, name) in shop_character_names(kind).enumerate() {
                 if bit < names.len() {
                     names[bit] = name.into();
                 }
@@ -599,14 +598,22 @@ fn bit_names(field: &Property) -> Vec<String> {
                     names[bit] = name.into();
                 }
             }
+            if kind == SaveKind::WindowsGame && names.len() > 44 {
+                names[44] = "adaptivedifficulty".into();
+            }
         }
         "hint_completion_bits" => {
             let bank_bits = names.len() / 2;
             for bank in 0..2 {
                 for &(name, bit) in TUTORIAL_HINT_BITS {
                     if bit < bank_bits {
-                        names[bank * bank_bits + bit] =
-                            format!("{}.{name}", if bank == 0 { "console" } else { "touch" });
+                        let bank_name = match (kind, bank) {
+                            (SaveKind::AndroidGame, 0) => "console",
+                            (SaveKind::AndroidGame, _) => "touch",
+                            (_, 0) => "bank0",
+                            (_, _) => "bank1",
+                        };
+                        names[bank * bank_bits + bit] = format!("{bank_name}.{name}");
                     }
                 }
             }
@@ -835,8 +842,8 @@ fn parse_mask_number(text: &str, size: usize) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-fn assign_mask(destination: &mut [u8], field: &Property, value: &str) -> bool {
-    let names = bit_names(field);
+fn assign_mask(destination: &mut [u8], kind: SaveKind, field: &Property, value: &str) -> bool {
+    let names = bit_names(kind, field);
     let mut result = vec![0u8; field.size];
     for token in value.split('|') {
         if token == "NONE" {
@@ -889,7 +896,7 @@ pub(crate) fn assign(
     let mut value = raw_value.to_owned();
     let name = match raw_name {
         "save_version" => "difficulty",
-        "field30_0x7c2c" => "gameplay_seconds",
+        "field30_0x7c2c" | "field30_0x7c20" => "gameplay_seconds",
         "initial_store_pack_flags" => "suit_flags",
         "field_0x7bf8" => "shop_gold_brick_purchased_bits",
         "customizer.primary_name_unlocked" => "customizer.primary_use_saved_name",
@@ -936,10 +943,11 @@ pub(crate) fn assign(
             Kind::Signed | Kind::Unsigned => integer_expectation(&field),
         },
     };
+    let save_kind = save.kind();
     let destination = &mut save.bytes[field.offset..field.offset + field.size];
     match field.kind {
         Kind::Bitmask => {
-            return assign_mask(destination, &field, &value)
+            return assign_mask(destination, save_kind, &field, &value)
                 .then_some(())
                 .ok_or_else(invalid_value);
         }
@@ -1178,7 +1186,7 @@ fn mask_summary(save: &Save, fields: &[Property], name: &str) -> String {
         return "None".into();
     };
     let data = &save.bytes[field.offset..field.offset + field.size];
-    let labels = bit_names(field)
+    let labels = bit_names(save.kind(), field)
         .into_iter()
         .enumerate()
         .filter(|(bit, _)| data[*bit / 8] & (1 << (*bit % 8)) != 0)
@@ -1197,14 +1205,14 @@ fn mask_summary(save: &Save, fields: &[Property], name: &str) -> String {
     }
 }
 
-fn character_summary(characters: &[u8], include: impl Fn(u8) -> bool) -> String {
+fn character_summary(kind: SaveKind, characters: &[u8], include: impl Fn(u8) -> bool) -> String {
     let names = characters
         .iter()
         .copied()
         .enumerate()
         .filter(|(_, flags)| include(*flags))
         .map(|(id, _)| {
-            character_name(id)
+            character_name(kind, id)
                 .map(str::to_owned)
                 .unwrap_or_else(|| format!("Unknown character (ID {id})"))
         })
@@ -1302,18 +1310,39 @@ fn customizer_piece_summary(category: usize, index: i16) -> String {
     )
 }
 
+struct GameView<'a> {
+    prefix: &'a GameSavePrefix,
+    android_summary: Option<&'a AndroidProgressSummary>,
+    suffix: &'a GameSaveSuffix,
+}
+
+fn game_view(save: &Save) -> GameView<'_> {
+    let payload = &save.bytes[save.payload..save.payload + save.payload_size];
+    match save.kind() {
+        SaveKind::AndroidGame => {
+            let game = GameSave::ref_from_bytes(payload).expect("validated Android game payload");
+            GameView {
+                prefix: &game.prefix,
+                android_summary: Some(&game.android_summary),
+                suffix: &game.suffix,
+            }
+        }
+        SaveKind::WindowsGame => {
+            let game =
+                WindowsGameSave::ref_from_bytes(payload).expect("validated Windows game payload");
+            GameView {
+                prefix: &game.prefix,
+                android_summary: None,
+                suffix: &game.suffix,
+            }
+        }
+        SaveKind::AndroidOptions => unreachable!("SuperOptions is not a game payload"),
+    }
+}
+
 pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool) -> String {
     let mut rows = Vec::new();
-    summary_row(
-        &mut rows,
-        "Save",
-        "Kind",
-        if save.payload_size == GAME_SIZE {
-            "Game progress"
-        } else {
-            "SuperOptions"
-        },
-    );
+    summary_row(&mut rows, "Save", "Kind", save.kind().description());
     summary_row(
         &mut rows,
         "Save",
@@ -1339,7 +1368,19 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         );
     }
 
-    if save.payload_size == OPTIONS_SIZE {
+    let metadata = save.header_metadata();
+    for (label, value) in [
+        ("Application", metadata.application),
+        ("Slot label", metadata.slot),
+        ("Reserved label", metadata.reserved),
+        ("Saved at", metadata.timestamp),
+    ] {
+        if let Some(value) = value {
+            summary_row(&mut rows, "Envelope metadata", label, value);
+        }
+    }
+
+    if save.kind() == SaveKind::AndroidOptions {
         let options = SuperOptions::ref_from_bytes(
             &save.bytes[save.payload..save.payload + save.payload_size],
         )
@@ -1403,64 +1444,71 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         return render_summary(rows, filter, color);
     }
 
-    let game =
-        GameSave::ref_from_bytes(&save.bytes[save.payload..save.payload + save.payload_size])
-            .expect("validated game payload");
-    summary_row(&mut rows, "Progress", "Studs", number(game.coins.get()));
-    summary_row(
-        &mut rows,
-        "Progress",
-        "Completion points",
-        number(game.completion.get()),
-    );
-    summary_row(
-        &mut rows,
-        "Progress",
-        "Gold bricks",
-        number(game.gold_bricks),
-    );
+    let game = game_view(save);
+    if let Some(summary) = game.android_summary {
+        summary_row(&mut rows, "Progress", "Studs", number(summary.coins.get()));
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Completion points",
+            number(summary.completion.get()),
+        );
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Gold bricks",
+            number(summary.gold_bricks),
+        );
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Indiana Jones",
+            if summary.indy_unlocked == 0 {
+                "Locked"
+            } else {
+                "Unlocked"
+            },
+        );
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Completion rewards",
+            human_enum("reward_flags", summary.reward_flags.into()),
+        );
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Hub builds",
+            human_enum("hub_build_flags", summary.hub_build_flags.into()),
+        );
+    } else {
+        summary_row(
+            &mut rows,
+            "Progress",
+            "Stored slot code",
+            number(save.slot_code() as i32),
+        );
+    }
     summary_row(
         &mut rows,
         "Progress",
         "Gameplay time",
-        duration(game.gameplay_seconds.get()),
+        duration(game.suffix.gameplay_seconds.get()),
     );
     summary_row(
         &mut rows,
         "Progress",
         "Difficulty",
-        game.difficulty.to_string(),
-    );
-    summary_row(
-        &mut rows,
-        "Progress",
-        "Indiana Jones",
-        if game.indy_unlocked == 0 {
-            "Locked"
-        } else {
-            "Unlocked"
-        },
-    );
-    summary_row(
-        &mut rows,
-        "Progress",
-        "Completion rewards",
-        human_enum("reward_flags", game.reward_flags.into()),
-    );
-    summary_row(
-        &mut rows,
-        "Progress",
-        "Hub builds",
-        human_enum("hub_build_flags", game.hub_build_flags.into()),
+        game.prefix.difficulty.to_string(),
     );
     summary_row(
         &mut rows,
         "Progress",
         "Suit abilities",
-        human_enum("suit_flags", game.suit_flags.get()),
+        human_enum("suit_flags", game.prefix.suit_flags.get()),
     );
 
-    let options = &game.options;
+    let options = &game.prefix.options;
     for (label, name, value) in [
         (
             "Player 1 rumble",
@@ -1528,7 +1576,7 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         );
     }
 
-    for (index, episode) in game.episodes.iter().enumerate() {
+    for (index, episode) in game.prefix.episodes.iter().enumerate() {
         let mut values = vec![
             if episode.flags.get() & 1 != 0 {
                 "Completed".to_owned()
@@ -1555,7 +1603,7 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         );
     }
 
-    for (index, area) in game.areas.iter().enumerate() {
+    for (index, area) in game.prefix.areas.iter().enumerate() {
         let mut values = Vec::new();
         if area.complete != 0 {
             values.push("available".to_owned());
@@ -1581,24 +1629,24 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
             summary_row(
                 &mut rows,
                 "Areas with progress",
-                configured_name(area_name(index), "area", index),
+                configured_name(area_name(save.kind(), index), "area", index),
                 values.join(", "),
             );
         }
     }
 
-    for (index, area) in game.areas.iter().enumerate() {
+    for (index, area) in game.prefix.areas.iter().enumerate() {
         if area.challenge_trial_time.get() != 0.0 {
             summary_row(
                 &mut rows,
                 "Stored challenge times",
-                configured_name(area_name(index), "area", index),
+                configured_name(area_name(save.kind(), index), "area", index),
                 duration(area.challenge_trial_time.get()),
             );
         }
     }
 
-    for (index, level) in game.levels.iter().enumerate() {
+    for (index, level) in game.prefix.levels.iter().enumerate() {
         let names = level
             .minikit_names
             .iter()
@@ -1621,14 +1669,14 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
             summary_row(
                 &mut rows,
                 "Levels with progress",
-                configured_name(level_name(index), "level", index),
+                configured_name(level_name(save.kind(), index), "level", index),
                 values.join("; "),
             );
         }
     }
 
-    for (index, mission) in game.mission.completed.iter().enumerate() {
-        let time = game.mission.best_times[index].get();
+    for (index, mission) in game.suffix.mission.completed.iter().enumerate() {
+        let time = game.suffix.mission.best_times[index].get();
         if *mission != 0 || time != 0.0 {
             let state = if *mission == 0 {
                 "Incomplete"
@@ -1655,20 +1703,24 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         &mut rows,
         "Characters",
         "Owned / playable",
-        character_summary(&game.characters, |flags| flags & 1 != 0),
+        character_summary(save.kind(), &game.suffix.characters, |flags| flags & 1 != 0),
     );
     summary_row(
         &mut rows,
         "Characters",
         "Unlocked / not owned",
-        character_summary(&game.characters, |flags| flags & 2 != 0 && flags & 1 == 0),
+        character_summary(save.kind(), &game.suffix.characters, |flags| {
+            flags & 2 != 0 && flags & 1 == 0
+        }),
     );
-    let unusual = character_summary(&game.characters, |flags| flags & !3 != 0);
+    let unusual = character_summary(save.kind(), &game.suffix.characters, |flags| {
+        flags & !3 != 0
+    });
     if unusual != "None" {
         summary_row(&mut rows, "Characters", "Unknown state bits", unusual);
     }
 
-    let custom = &game.customizer;
+    let custom = &game.suffix.customizer;
     summary_row(
         &mut rows,
         "Primary custom character",
@@ -1731,7 +1783,8 @@ pub fn raw_list_text(save: &Save, fields: &[Property], filter: &str) -> String {
     let mut output = String::new();
     writeln!(
         output,
-        "# payload_size={} checksum_valid={}",
+        "# kind={} payload_size={} checksum_valid={}",
+        save.kind().description(),
         save.payload_size,
         save.checksum_valid()
     )
@@ -1739,7 +1792,7 @@ pub fn raw_list_text(save: &Save, fields: &[Property], filter: &str) -> String {
     for field in fields.iter().filter(|field| field.name.contains(filter)) {
         let data = &save.bytes[field.offset..field.offset + field.size];
         if field.kind == Kind::Bitmask {
-            let names = bit_names(field);
+            let names = bit_names(save.kind(), field);
             let set: Vec<_> = names
                 .iter()
                 .enumerate()
@@ -1981,6 +2034,21 @@ pub fn property_description(name: &str) -> &'static str {
         "header.extradata_offset" => {
             "Bytes skipped after the header before the payload. Edits must preserve this layout."
         }
+        "header.platform_data" => {
+            "Optional 16-byte PC platform value. The Windows writer copies it from a generic PC API setting; this game does not provide that setting, so observed saves contain zeroes. Android also writes zeroes."
+        }
+        "header.application_metadata" => {
+            "Nominal 1024-code-unit UTF-16 application label. The Windows writer starts it with the configured title and converts a fixed 1024-byte source region, so bytes after the first terminator are incidental and must be preserved. Android leaves the block zeroed."
+        }
+        "header.slot_metadata" => {
+            "Nominal 1024-code-unit UTF-16 slot label. Windows starts it with 'Save Slot N'; its fixed-length conversion also preserves stale temporary-buffer data after the first terminator. Android leaves the block zeroed."
+        }
+        "header.reserved_metadata" => {
+            "Third 1024-code-unit metadata block. It is empty in the inspected Windows and Android writers; no meaning is established."
+        }
+        "header.timestamp_metadata" => {
+            "Nominal 1024-code-unit UTF-16 localized save date/time. Windows builds it with GetDateFormatA and GetTimeFormatA; bytes after the first terminator are incidental conversion tail data. Android leaves the block zeroed."
+        }
         "extra_prefix" => {
             "Opaque bytes skipped by the game loader before the payload; preserved verbatim."
         }
@@ -2053,7 +2121,7 @@ pub fn property_description(name: &str) -> &'static str {
             "Derived: ChecksumSaveData(payload), sum of little-endian u32 words plus 0x5c0999 modulo 2^32. Editing requires --keep-derived."
         }
         "slot_code" => {
-            "Derived: sign-extended i16 MakeSaveHash (completion points); options use 0xffffffff. Editing requires --keep-derived."
+            "Android game saves derive this from the sign-extended completion field; Android options use 0xffffffff. Windows stores the MakeSaveHash result but has no matching completion field in its payload, so ordinary edits preserve it. Editing it directly requires --keep-derived."
         }
         "byte[]" => {
             "Unidentified/padding byte at an absolute file offset. Raw byte[N] aliases are also available for every named field."
