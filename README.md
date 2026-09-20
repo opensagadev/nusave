@@ -1,5 +1,7 @@
 # nusave
 
+[![CI](https://github.com/opensagadev/nusave/actions/workflows/ci.yml/badge.svg)](https://github.com/opensagadev/nusave/actions/workflows/ci.yml)
+
 `nusave` is a standalone command-line viewer, editor, and format inspector for the savegames used by
 **LEGO Star Wars: The Complete Saga**. It can display an interpreted save summary, export reusable
 assignments, edit a slot safely, or create a deterministic new save
@@ -21,10 +23,10 @@ cargo build --release
 ```
 
 The executable is written to `target/release/nusave` (`nusave.exe` on Windows). To install it
-from a checkout instead:
+directly from GitHub:
 
 ```console
-cargo install --path .
+cargo install --git https://github.com/opensagadev/nusave.git
 ```
 
 ## Command line
