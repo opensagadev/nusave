@@ -1,0 +1,20 @@
+[package]
+name = "nusave"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Inspect, explain, edit, and create Traveller's Tales Nu engine savegames"
+license = "MIT"
+repository = "https://github.com/opensagadev/nusave"
+keywords = ["savegame", "travellers-tales", "lego", "nu-engine"]
+categories = ["command-line-utilities", "parser-implementations"]
+
+[dependencies]
+anstyle = "1.0.14"
+clap = { version = "4.6.0", features = ["derive"] }
+thiserror = "2.0.20"
+zerocopy = { version = "0.8.57", features = ["derive"] }
+
+[profile.release]
+lto = true
+strip = true
