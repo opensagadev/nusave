@@ -51,7 +51,8 @@ save.write_to(&mut output)?;
 ```
 
 `summary_rows` exposes interpreted section/label/value records without parsing
-terminal output. `properties`, `property_description`, and `raw_list_text` expose
+terminal output. `property_editor` supplies native-control types, labels, numeric
+limits, enum choices, and flags; `apply_values` applies named UI values as a batch. `properties`, `property_description`, and `raw_list_text` expose
 the editable schema and lossless assignments. Both buffer and reader entry points
 enforce the 16 MiB limit. Failed assignment batches leave the save unchanged.
 

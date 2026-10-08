@@ -2162,3 +2162,212 @@ fn integer_expectation(field: &Property) -> String {
     }
     expectation
 }
+
+/// A choice for a native select, toggle, or flags control.
+#[derive(Clone, Debug)]
+pub struct EditorChoice {
+    pub label: String,
+    pub value: String,
+}
+
+/// Portable metadata for editing a field without parsing CLI assignments.
+#[derive(Clone, Debug)]
+pub struct PropertyEditor {
+    pub label: String,
+    pub group: &'static str,
+    pub input: &'static str,
+    pub value: String,
+    pub choices: Vec<EditorChoice>,
+    pub min: Option<i64>,
+    pub max: Option<i64>,
+    pub readonly: bool,
+    pub advanced: bool,
+}
+
+pub fn property_editor(save: &Save, field: &Property) -> PropertyEditor {
+    let data = &save.bytes[field.offset..field.offset + field.size];
+    let name = field.name.as_str();
+    let group = if name.starts_with("header.")
+        || matches!(name, "extra_prefix" | "checksum" | "slot_code")
+    {
+        "File data"
+    } else if name.starts_with("options.") || name.starts_with("options_save.") {
+        "Settings"
+    } else if name.starts_with("area_save[") {
+        "Areas"
+    } else if name.starts_with("level_save[") {
+        "Levels"
+    } else if name.starts_with("episode_save[") {
+        "Episodes"
+    } else if name.starts_with("mission_save.") {
+        "Missions"
+    } else if name.starts_with("character_save[") {
+        "Characters"
+    } else if name.starts_with("customizer.") {
+        "Custom characters"
+    } else if name.contains("_bits") {
+        "Collections"
+    } else {
+        "Progress"
+    };
+    let mut label = match name {
+        "coins" => "Studs".into(),
+        "completion" => "Completion points".into(),
+        "indy_unlocked" => "Indiana Jones unlocked".into(),
+        _ => human_words(name.rsplit('.').next().unwrap_or(name)),
+    };
+    for (prefix, lookup) in [
+        (
+            "character_save[",
+            character_name as fn(SaveKind, usize) -> Option<&'static str>,
+        ),
+        ("area_save[", area_name),
+        ("level_save[", level_name),
+    ] {
+        if let Some((index, tail)) = name.strip_prefix(prefix).and_then(|s| s.split_once(']'))
+            && let Ok(index) = index.parse::<usize>()
+            && let Some(configured) = lookup(save.kind(), index)
+        {
+            label = format!(
+                "{} {}",
+                human_words(configured),
+                human_words(tail.trim_start_matches('.'))
+            )
+            .trim()
+            .to_owned();
+        }
+    }
+    let mut editor = PropertyEditor {
+        label,
+        group,
+        input: "number",
+        value: String::new(),
+        choices: Vec::new(),
+        min: None,
+        max: None,
+        readonly: matches!(
+            name,
+            "header.field0_0x0" | "header.field1_0x4" | "header.size" | "header.extradata_offset"
+        ),
+        advanced: group == "File data"
+            || name.contains("field")
+            || name.contains("padding")
+            || name.contains("reserved"),
+    };
+    let enumeration = enum_values(name);
+    if field.kind == Kind::Bitmask || enumeration.flags {
+        editor.input = "flags";
+        let names = if field.kind == Kind::Bitmask {
+            bit_names(save.kind(), field)
+        } else {
+            (0..field.size * 8)
+                .map(|bit| {
+                    enumeration
+                        .values
+                        .iter()
+                        .find(|(_, n)| *n == 1u32 << bit)
+                        .map_or_else(|| format!("{}", 1u32 << bit), |(name, _)| name.clone())
+                })
+                .collect()
+        };
+        let mut selected = Vec::new();
+        for (bit, value) in names.into_iter().enumerate() {
+            let label = if value.parse::<u32>().is_ok() {
+                format!("Unknown bit {bit}")
+            } else {
+                human_words(&value)
+            };
+            if data[bit / 8] & (1 << (bit % 8)) != 0 {
+                selected.push(value.clone());
+            }
+            editor.choices.push(EditorChoice { label, value });
+        }
+        editor.value = if selected.is_empty() {
+            "NONE".into()
+        } else {
+            selected.join("|")
+        };
+    } else if !enumeration.values.is_empty() {
+        let value = read_unsigned(data);
+        editor.input = if enumeration.values.len() == 2
+            && enumeration.values[0].1 == 0
+            && enumeration.values[1].1 == 1
+            && matches!(enumeration.values[0].0.as_str(), "OFF" | "INCOMPLETE")
+        {
+            "toggle"
+        } else {
+            "select"
+        };
+        editor.value = value.to_string();
+        editor.choices = enumeration
+            .values
+            .iter()
+            .map(|(name, value)| EditorChoice {
+                label: human_words(name),
+                value: value.to_string(),
+            })
+            .collect();
+        if !enumeration.values.iter().any(|(_, n)| *n == value) {
+            editor.input = "select";
+            editor.choices.push(EditorChoice {
+                label: format!("Unknown ({value})"),
+                value: value.to_string(),
+            });
+        }
+    } else {
+        match field.kind {
+            Kind::Bytes => {
+                if (name.ends_with("primary_name") || name.ends_with("secondary_name"))
+                    && let Ok(text) =
+                        std::str::from_utf8(data.split(|b| *b == 0).next().unwrap_or(data))
+                {
+                    editor.input = "text";
+                    editor.value = text.into();
+                    editor.max = Some(field.size.saturating_sub(1) as i64);
+                } else {
+                    editor.input = "hex";
+                    editor.value = data.iter().map(|b| format!("{b:02x}")).collect();
+                }
+            }
+            Kind::Float => {
+                editor.input = "float";
+                editor.value =
+                    f32::from_le_bytes(data.try_into().expect("float width")).to_string();
+            }
+            Kind::Signed => {
+                let bits = field.size * 8;
+                let raw = read_unsigned(data);
+                editor.value = match field.size {
+                    1 => (raw as i8).to_string(),
+                    2 => (raw as i16).to_string(),
+                    _ => (raw as i32).to_string(),
+                };
+                editor.min = Some(-(1i64 << (bits - 1)));
+                editor.max = Some((1i64 << (bits - 1)) - 1);
+            }
+            Kind::Unsigned => {
+                editor.value = read_unsigned(data).to_string();
+                editor.min = Some(0);
+                editor.max = Some((1i64 << (field.size * 8)) - 1);
+            }
+            Kind::Bitmask => unreachable!(),
+        }
+    }
+    editor
+}
+
+/// Apply named UI values as a transaction. Values use the field's stored syntax;
+/// callers do not need to construct assignment expressions.
+pub fn apply_values<I, K, V>(save: &mut Save, values: I) -> Result<(), crate::EditError>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    crate::apply_assignments(
+        save,
+        values
+            .into_iter()
+            .map(|(name, value)| format!("{}={}", name.as_ref(), value.as_ref())),
+    )
+}

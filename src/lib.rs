@@ -15,8 +15,8 @@ pub use format::{
     ParseError, ReadError, Save, SaveKind, WINDOWS_GAME_SIZE, save_file_name,
 };
 pub use schema::{
-    AssignmentError, Kind, Property, SummaryRow, properties, property_description, raw_list_text,
-    summary_rows, summary_text,
+    AssignmentError, EditorChoice, Kind, Property, PropertyEditor, SummaryRow, apply_values,
+    properties, property_description, property_editor, raw_list_text, summary_rows, summary_text,
 };
 
 /// A requested edit could not be applied safely.

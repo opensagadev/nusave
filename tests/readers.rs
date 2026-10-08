@@ -46,3 +46,54 @@ fn reader_stops_at_the_limit_and_reports_io_errors() {
         Err(ParseError::TooLarge { .. })
     ));
 }
+
+#[test]
+fn editor_controls_expose_current_values_and_preserve_unknown_flags() {
+    use nusave::{apply_values, property_editor};
+    let mut save = Save::fresh(true);
+    apply_values(
+        &mut save,
+        [
+            ("options.music_enabled", "1"),
+            ("options.store_pack_flags", "32769"),
+        ],
+    )
+    .unwrap();
+    let fields = properties(&save);
+    let music = property_editor(
+        &save,
+        fields
+            .iter()
+            .find(|f| f.name == "options.music_enabled")
+            .unwrap(),
+    );
+    assert_eq!(music.input, "toggle");
+    assert_eq!(music.value, "1");
+    let flags = property_editor(
+        &save,
+        fields
+            .iter()
+            .find(|f| f.name == "options.store_pack_flags")
+            .unwrap(),
+    );
+    assert_eq!(flags.input, "flags");
+    assert!(flags.value.contains("32768"));
+    let before = save.bytes.clone();
+    apply_values(
+        &mut save,
+        [("options.store_pack_flags", flags.value.as_str())],
+    )
+    .unwrap();
+    assert_eq!(before, save.bytes);
+    assert!(
+        apply_values(
+            &mut save,
+            [
+                ("options.music_enabled", "0"),
+                ("options.touch_controls", "999")
+            ]
+        )
+        .is_err()
+    );
+    assert_eq!(before, save.bytes);
+}
