@@ -11,11 +11,12 @@ mod schema;
 use thiserror::Error;
 
 pub use format::{
-    ANDROID_GAME_SIZE, GAME_SIZE, HEADER_SIZE, HeaderMetadata, OPTIONS_SIZE, ParseError, ReadError,
-    Save, SaveKind, WINDOWS_GAME_SIZE, WriteError, save_file_name, write_atomic,
+    ANDROID_GAME_SIZE, GAME_SIZE, HEADER_SIZE, HeaderMetadata, MAX_SAVE_SIZE, OPTIONS_SIZE,
+    ParseError, ReadError, Save, SaveKind, WINDOWS_GAME_SIZE, save_file_name,
 };
 pub use schema::{
-    AssignmentError, Kind, Property, properties, property_description, raw_list_text, summary_text,
+    AssignmentError, Kind, Property, SummaryRow, properties, property_description, raw_list_text,
+    summary_rows, summary_text,
 };
 
 /// A requested edit could not be applied safely.

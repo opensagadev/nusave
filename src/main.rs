@@ -1,7 +1,8 @@
+mod filesystem;
 use clap::{Args, Parser, Subcommand};
+use filesystem::{ReadError, WriteError, read_save, write_atomic};
 use nusave::{
-    EditError, ReadError, Save, WriteError, apply_assignments, properties, raw_list_text,
-    save_file_name, summary_text, write_atomic,
+    EditError, Save, apply_assignments, properties, raw_list_text, save_file_name, summary_text,
 };
 use std::fs;
 use std::io::{self, IsTerminal};
@@ -191,7 +192,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
     let slot = cli.folder.join(save_file_name(slot_number));
     match command {
         Command::List(args) => {
-            let save = Save::read(&slot)?;
+            let save = read_save(&slot)?;
             let fields = properties(&save);
             let filter = args.filter.as_deref().unwrap_or("");
             if args.raw {
@@ -211,14 +212,14 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Edit(args) => {
             let assignments = collect_assignments(args.params, args.assignments)?;
             let output = args.output.unwrap_or_else(|| slot.clone());
-            let save = Save::read(&slot)?;
+            let save = read_save(&slot)?;
             let replace_input = output == slot;
             finish_edit(replace_input, &output, save, assignments, args.keep_derived)
         }
         Command::Create(args) => {
             let assignments = collect_assignments(args.params, args.assignments)?;
             let save = if let Some(from) = args.from {
-                Save::read(&from)?
+                read_save(&from)?
             } else {
                 Save::fresh(args.options)
             };

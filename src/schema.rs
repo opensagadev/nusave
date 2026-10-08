@@ -1056,10 +1056,10 @@ fn read_unsigned(bytes: &[u8]) -> u32 {
 }
 
 #[derive(Debug)]
-struct SummaryRow {
-    section: &'static str,
-    label: String,
-    value: String,
+pub struct SummaryRow {
+    pub section: &'static str,
+    pub label: String,
+    pub value: String,
 }
 
 fn summary_row(
@@ -1341,6 +1341,11 @@ fn game_view(save: &Save) -> GameView<'_> {
 }
 
 pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool) -> String {
+    render_summary(summary_rows(save, fields), filter, color)
+}
+
+/// Interpreted values for graphical interfaces, without terminal formatting.
+pub fn summary_rows(save: &Save, fields: &[Property]) -> Vec<SummaryRow> {
     let mut rows = Vec::new();
     summary_row(&mut rows, "Save", "Kind", save.kind().description());
     summary_row(
@@ -1441,7 +1446,7 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
                 options.store_bundle_flags.into(),
             ),
         );
-        return render_summary(rows, filter, color);
+        return rows;
     }
 
     let game = game_view(save);
@@ -1776,7 +1781,7 @@ pub fn summary_text(save: &Save, fields: &[Property], filter: &str, color: bool)
         );
     }
 
-    render_summary(rows, filter, color)
+    rows
 }
 
 pub fn raw_list_text(save: &Save, fields: &[Property], filter: &str) -> String {

@@ -1,8 +1,5 @@
 use crate::layout::{GameSave, SaveHeader};
-use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
 use thiserror::Error;
 use zerocopy::FromBytes;
 use zerocopy::byteorder::little_endian::U32;
@@ -13,7 +10,7 @@ pub const WINDOWS_GAME_SIZE: usize = 0x7e4c;
 /// Size used when creating a new game save. New saves target the Android layout.
 pub const GAME_SIZE: usize = ANDROID_GAME_SIZE;
 pub const OPTIONS_SIZE: usize = 0x18;
-const MAX_SAVE_SIZE: u64 = 16 * 1024 * 1024;
+pub const MAX_SAVE_SIZE: u64 = 16 * 1024 * 1024;
 
 pub fn save_file_name(slot: u8) -> String {
     format!("SaveGame{slot}.LEGO Star Wars - The Complete Saga_SavedGame")
@@ -22,6 +19,8 @@ pub fn save_file_name(slot: u8) -> String {
 /// A byte buffer is not a supported Nu save envelope.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ParseError {
+    #[error("save is {actual} bytes, exceeding the {limit}-byte safety limit")]
+    TooLarge { actual: usize, limit: u64 },
     #[error("save is only {actual} bytes; a save envelope needs at least {minimum} bytes")]
     TooShort { actual: usize, minimum: usize },
     #[error("invalid save magic 0x{found:08x}; expected 0x52474d48")]
@@ -81,94 +80,13 @@ pub struct HeaderMetadata {
     pub timestamp: Option<String>,
 }
 
-/// A save could not be loaded from disk.
+/// A save could not be read or parsed from a byte source.
 #[derive(Debug, Error)]
 pub enum ReadError {
-    #[error("cannot open save {}: {source}", path.display())]
-    Open {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot inspect save {}: {source}", path.display())]
-    Metadata {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error(
-        "save {} is {actual} bytes, exceeding the {limit}-byte safety limit",
-        path.display()
-    )]
-    TooLarge {
-        path: PathBuf,
-        actual: u64,
-        limit: u64,
-    },
-    #[error("cannot read save {}: {source}", path.display())]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("invalid save {}: {source}", path.display())]
-    Invalid {
-        path: PathBuf,
-        #[source]
-        source: ParseError,
-    },
-}
-
-/// A save could not be published atomically.
-#[derive(Debug, Error)]
-pub enum WriteError {
-    #[error("cannot create temporary output {}: {source}", path.display())]
-    CreateTemporary {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error(
-        "could not reserve a temporary output next to {} after 100 attempts",
-        target.display()
-    )]
-    TemporaryNamesExhausted { target: PathBuf },
-    #[error("cannot write temporary output {}: {source}", path.display())]
-    Write {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot flush temporary output {}: {source}", path.display())]
-    Flush {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error(
-        "cannot copy permissions from {} to {}: {source}",
-        target.display(),
-        temporary.display()
-    )]
-    Permissions {
-        target: PathBuf,
-        temporary: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot sync temporary output {}: {source}", path.display())]
-    Sync {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot publish temporary output {} as {}: {source}", temporary.display(), target.display())]
-    Publish {
-        temporary: PathBuf,
-        target: PathBuf,
-        #[source]
-        source: io::Error,
-    },
+    #[error("cannot read save: {0}")]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Invalid(#[from] ParseError),
 }
 
 #[derive(Clone, Debug)]
@@ -180,6 +98,12 @@ pub struct Save {
 
 impl Save {
     pub fn parse(bytes: Vec<u8>) -> Result<Self, ParseError> {
+        if bytes.len() as u64 > MAX_SAVE_SIZE {
+            return Err(ParseError::TooLarge {
+                actual: bytes.len(),
+                limit: MAX_SAVE_SIZE,
+            });
+        }
         if bytes.len() < HEADER_SIZE + 8 {
             return Err(ParseError::TooShort {
                 actual: bytes.len(),
@@ -244,35 +168,17 @@ impl Save {
         })
     }
 
-    pub fn read(path: &Path) -> Result<Self, ReadError> {
-        let mut file = File::open(path).map_err(|source| ReadError::Open {
-            path: path.to_owned(),
-            source,
-        })?;
-        let length = file
-            .metadata()
-            .map_err(|source| ReadError::Metadata {
-                path: path.to_owned(),
-                source,
-            })?
-            .len();
-        if length > MAX_SAVE_SIZE {
-            return Err(ReadError::TooLarge {
-                path: path.to_owned(),
-                actual: length,
-                limit: MAX_SAVE_SIZE,
-            });
-        }
-        let mut bytes = Vec::with_capacity(length as usize);
-        file.read_to_end(&mut bytes)
-            .map_err(|source| ReadError::Read {
-                path: path.to_owned(),
-                source,
-            })?;
-        Self::parse(bytes).map_err(|source| ReadError::Invalid {
-            path: path.to_owned(),
-            source,
-        })
+    /// Read a save from any byte source, with a bounded allocation.
+    pub fn from_reader(reader: impl Read) -> Result<Self, ReadError> {
+        let mut bytes = Vec::new();
+        reader.take(MAX_SAVE_SIZE + 1).read_to_end(&mut bytes)?;
+        Ok(Self::parse(bytes)?)
+    }
+
+    /// Write the current bytes exactly, preserving unknown data and stored derived fields.
+    /// Call `derive` first when a repaired checksum and slot code are wanted.
+    pub fn write_to(&self, mut writer: impl Write) -> io::Result<()> {
+        writer.write_all(&self.bytes)
     }
 
     pub fn fresh(options: bool) -> Self {
@@ -399,107 +305,5 @@ fn utf16_prefix(bytes: &[u8]) -> Option<String> {
         None
     } else {
         Some(String::from_utf16_lossy(&units))
-    }
-}
-
-fn temporary_path(path: &Path, attempt: u32) -> PathBuf {
-    let mut value: OsString = path.as_os_str().to_owned();
-    value.push(format!(".incomplete.{}.{attempt}", std::process::id()));
-    PathBuf::from(value)
-}
-
-pub fn write_atomic(path: &Path, save: &Save, replace: bool) -> Result<(), WriteError> {
-    let mut opened = None;
-    for attempt in 0..100 {
-        let temporary = temporary_path(path, attempt);
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-        {
-            Ok(file) => {
-                opened = Some((temporary, file));
-                break;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(source) => {
-                return Err(WriteError::CreateTemporary {
-                    path: temporary,
-                    source,
-                });
-            }
-        }
-    }
-    let (temporary, mut file) = opened.ok_or_else(|| WriteError::TemporaryNamesExhausted {
-        target: path.to_owned(),
-    })?;
-    let result = (|| -> Result<(), WriteError> {
-        file.write_all(&save.bytes)
-            .map_err(|source| WriteError::Write {
-                path: temporary.clone(),
-                source,
-            })?;
-        file.flush().map_err(|source| WriteError::Flush {
-            path: temporary.clone(),
-            source,
-        })?;
-        if replace && let Ok(metadata) = fs::metadata(path) {
-            file.set_permissions(metadata.permissions())
-                .map_err(|source| WriteError::Permissions {
-                    target: path.to_owned(),
-                    temporary: temporary.clone(),
-                    source,
-                })?;
-        }
-        file.sync_all().map_err(|source| WriteError::Sync {
-            path: temporary.clone(),
-            source,
-        })?;
-        drop(file);
-        publish(&temporary, path, replace).map_err(|source| WriteError::Publish {
-            temporary: temporary.clone(),
-            target: path.to_owned(),
-            source,
-        })
-    })();
-    let _ = fs::remove_file(&temporary);
-    result
-}
-
-#[cfg(not(windows))]
-fn publish(temporary: &Path, path: &Path, replace: bool) -> io::Result<()> {
-    if replace {
-        fs::rename(temporary, path)
-    } else {
-        fs::hard_link(temporary, path)
-    }
-}
-
-#[cfg(windows)]
-fn publish(temporary: &Path, path: &Path, replace: bool) -> io::Result<()> {
-    if !replace {
-        return fs::hard_link(temporary, path);
-    }
-    use std::os::windows::ffi::OsStrExt;
-    const MOVEFILE_REPLACE_EXISTING: u32 = 1;
-    const MOVEFILE_WRITE_THROUGH: u32 = 8;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-    }
-    let existing: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
-    let new: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // SAFETY: both pointers reference NUL-terminated UTF-16 buffers for the duration of the call.
-    let ok = unsafe {
-        MoveFileExW(
-            existing.as_ptr(),
-            new.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if ok == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
     }
 }

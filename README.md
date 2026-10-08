@@ -29,6 +29,36 @@ directly from GitHub:
 cargo install --git https://github.com/opensagadev/nusave.git
 ```
 
+## Portable library and web tool
+
+The library parses byte buffers or any `std::io::Read` source and writes to any
+`std::io::Write` destination. It has no filesystem or process access; file loading,
+atomic replacement, paths, and CLI argument parsing live in the binary. Disable
+its default `cli` feature when using it from WebAssembly:
+
+```toml
+nusave = { git = "https://github.com/opensagadev/nusave", default-features = false }
+```
+
+```rust
+use nusave::{Save, apply_assignments, properties, summary_rows};
+let mut save = Save::from_reader(std::io::Cursor::new(bytes))?;
+apply_assignments(&mut save, ["coins=125000"])?;
+save.derive();
+let rows = summary_rows(&save, &properties(&save));
+let mut output = Vec::new();
+save.write_to(&mut output)?;
+```
+
+`summary_rows` exposes interpreted section/label/value records without parsing
+terminal output. `properties`, `property_description`, and `raw_list_text` expose
+the editable schema and lossless assignments. Both buffer and reader entry points
+enforce the 16 MiB limit. Failed assignment batches leave the save unchanged.
+
+The [opensaga.dev](https://github.com/opensagadev/opensaga.dev) repository owns the
+browser UI and its small WASM adapter. Main pushes notify its build workflow when
+`OPENSAGA_PAGES_TOKEN` is configured with Actions read/write access to that repo.
+
 ## Command line
 
 ```text
