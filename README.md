@@ -63,11 +63,10 @@ browser UI and its small WASM adapter. Main pushes notify its build workflow whe
 ## Command line
 
 ```text
-nusave [OPTIONS] [SAVEGAME_FOLDER] [COMMAND]
+nusave [OPTIONS] <SAVEGAME_FOLDER> [COMMAND]
 ```
 
-`SAVEGAME_FOLDER` is optional and defaults to `res/SavedGames`. The program constructs the
-game's filename inside that folder:
+`SAVEGAME_FOLDER` is required. The program constructs the game's filename inside that folder:
 
 | Release | Slots | Contents |
 | --- | ---: | --- |

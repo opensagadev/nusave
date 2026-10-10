@@ -386,3 +386,12 @@ fn list_defaults_to_a_compact_interpreted_summary() {
     assert!(!listed.contains("\n\n"));
     assert!(listed.lines().count() < 100);
 }
+
+#[test]
+fn savegame_folder_is_required() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nusave"))
+        .output()
+        .expect("run nusave");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("<SAVEGAME_FOLDER>"));
+}

@@ -13,7 +13,6 @@ use thiserror::Error;
 const AFTER_HELP: &str = "\
 Commands target slot 0 inside SAVEGAME_FOLDER unless --slot selects another slot.
 Windows uses game slots 0..5. Android uses game slots 0..2 and SuperOptions slot 3.
-The default folder is res/SavedGames.
 List shows a compact interpreted summary; list --raw emits reusable assignments.
 
 Integers accept decimal or 0x hex; floats accept decimal; byte arrays use hex:0011aaff.
@@ -30,7 +29,7 @@ Create refuses existing output. Edit writes atomically; --output refuses existin
 )]
 struct Cli {
     /// Folder containing LEGO Star Wars: The Complete Saga savegames.
-    #[arg(value_name = "SAVEGAME_FOLDER", default_value = "res/SavedGames")]
+    #[arg(value_name = "SAVEGAME_FOLDER")]
     folder: PathBuf,
 
     /// Save slot to read, edit, or create (Windows: 0..5; Android options: 3).
