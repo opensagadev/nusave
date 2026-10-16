@@ -11,6 +11,8 @@ The implementation is a Rust port of the save tooling developed in
 [`opensagadev/saga`](https://github.com/opensagadev/saga). It preserves unknown bytes instead of
 normalizing the file, understands the original Windows PC and later Android game-progress
 layouts plus Android `SuperOptions`, and reproduces the original checksum behavior.
+PC interpretation is also checked against the GOG executable and
+[`opensagadev/saga-pc`](https://github.com/opensagadev/saga-pc).
 
 ## Building
 
@@ -103,7 +105,7 @@ Progress
   Completion points  42
   Gameplay time      3h 14m 08s
   Indiana Jones      Unlocked
-  Suit abilities     Shadow, Technology
+  Suit availability  Batman, Robin
 ```
 
 For format work and exact reconstruction, `--raw` writes every property as `key=value`. The raw
@@ -111,8 +113,13 @@ output is deliberately accepted as a parameter file, including unknown header an
 
 ```console
 nusave "/path/to/SavedGames" list --raw > slot.params
-nusave "/other/SavedGames" create --params slot.params --keep-derived
+nusave "/other/SavedGames" create \
+  --from "/path/to/SavedGames/SaveGame0.LEGO Star Wars - The Complete Saga_SavedGame" \
+  --params slot.params --keep-derived
 ```
+
+The template preserves the release layout and any opaque-prefix length. Without `--from`,
+`create` targets the Android game layout; it cannot reconstruct a PC save solely from assignments.
 
 The first comment in a raw listing reports the detected release layout, payload size, and whether
 the stored checksum is valid. `--filter TEXT` searches interpreted labels and values in the normal
@@ -133,11 +140,11 @@ Assignments from each `--params FILE` are applied in command-line order, followe
 assignments. Quote assignments containing `|`, `[` or `]` when the shell treats those characters
 specially.
 
-By default `edit` updates the checksum and, where derivable, the trailing slot code; writes a
+By default `edit` updates the checksum and trailing slot code, writes a
 sibling temporary file, flushes it, then atomically replaces the selected slot. `--output PATH`
 leaves the input alone and refuses to overwrite an existing destination. Parsing or assignment
-errors occur before any output is published. The Windows payload does not contain the Android
-completion field used to derive `slot_code`, so Windows edits preserve its stored slot code.
+errors occur before any output is published. Both game layouts contain a completion value used
+to derive `slot_code`; its offset and the callback's integer extension differ by release.
 
 ### Create a save
 
@@ -163,7 +170,7 @@ input forms are:
 | Stored type | Accepted input | Example |
 | --- | --- | --- |
 | unsigned integer | decimal, `0x` hexadecimal, or a named enum | `coins=250000` |
-| signed integer | signed decimal or `0x` hexadecimal | `customizer.pieces[0]=-1` |
+| signed integer | signed decimal or `0x` hexadecimal | `episode_save[0].superstory_score_target=-1` |
 | `f32` | finite decimal or scientific notation | `gameplay_seconds=12.5` |
 | fixed bytes | exact `hex:` data, `text:` data padded with zeros, or an indexed byte | `customizer.primary_name=text:Leia` |
 | bitmask | a full-width number, `NONE`, or names/numbers joined by `|` | `reward_flags=100_PERCENT|ALL_GOLD_BRICKS` |
@@ -175,8 +182,8 @@ as `byte[N]`. When `list` encounters a non-finite, subnormal, or otherwise awkwa
 bit pattern, it emits byte assignments so a round trip remains exact.
 
 The envelope magic, envelope version, header size, and extra-data offset are structural and may
-only be assigned their current valid values. `checksum` and Android `slot_code` are derived after
-edits; Windows `slot_code` is preserved because its source value is not present in the PC payload.
+only be assigned their current valid values. `checksum` and `slot_code` are derived after edits
+for both game layouts.
 `--keep-derived` is available for byte-for-byte reconstruction and format research.
 
 ## Binary format
@@ -252,19 +259,25 @@ positive-length behavior of `MultiByteToWideChar`.
 
 ### Game payload schema
 
-The Windows `GAMESAVE_s` payload is the direct precursor of the Android payload. They share the
-same prefix through offset `0x7c1f` and the same suffix contents. Android inserts one confirmed
-12-byte progress-summary block between them:
+The Windows `GAMESAVE_s` payload is the direct precursor of the Android payload. The common
+prefix ends at `0x7c08`. PC then stores one 96-bit tutorial-completion bank; Android stores two,
+one for each control mode. Both have the same 12-byte progress record after those banks:
 
 ```text
 Windows PC (0x7e4c)                 Android (0x7e58)
-0x0000..0x7c1f  shared prefix       0x0000..0x7c1f  shared prefix
-0x7c20..0x7e4b  shared suffix       0x7c20..0x7c2b  Android-only summary
-                                      0x7c2c..0x7e57  shared suffix
+0x0000..0x7c07  common prefix       0x0000..0x7c07  common prefix
+0x7c08..0x7c13  tutorial bank       0x7c08..0x7c13  console tutorial bank
+                                   0x7c14..0x7c1f  touch tutorial bank
+0x7c14..0x7c1f  progress record     0x7c20..0x7c2b  progress record
+0x7c20..0x7e4b  shared suffix       0x7c2c..0x7e57  shared suffix
 ```
 
 There is no inferred conversion between variants. `nusave` detects the stored payload size,
 offers only properties that physically exist in that variant, and preserves its layout.
+In particular, PC tutorial edits are limited to 96 bits; bytes after that set are studs and
+progress, not another bank. The embedded `options_save` record exists in both games. PC also
+stores machine-wide graphics/audio/input preferences in a separate `pcconfig.txt`; it is outside
+this binary format. Android's touch controls and store entitlements live in `SuperOptions`.
 
 #### Top-level and embedded options
 
@@ -298,46 +311,60 @@ offers only properties that physically exist in that variant, and preserves its 
 | `level_save_padding` | `0x7829` | `bytes[3]` | Padding between level and area storage. |
 | `area_save[0..71].complete` | `0x782c` | `u8`, 72, stride `0x0c` | Area availability: `INCOMPLETE=0`, `COMPLETE=1`. |
 | `area_save[0..71].area_complete` | `0x782d` | `u8`, 72, stride `0x0c` | Area completion: `INCOMPLETE=0`, `COMPLETE=1`. |
-| `area_save[0..71].story_buildup_complete` | `0x782e` | `u8`, 72, stride `0x0c` | `INCOMPLETE=0`, `COMPLETE=1`. |
-| `area_save[0..71].freeplay_buildup_complete` | `0x782f` | `u8`, 72, stride `0x0c` | `INCOMPLETE=0`, `COMPLETE=1`. |
+| `area_save[0..71].story_true_jedi_complete` | `0x782e` | `u8`, 72, stride `0x0c` | Story-mode True Jedi: `INCOMPLETE=0`, `COMPLETE=1`. |
+| `area_save[0..71].freeplay_true_jedi_complete` | `0x782f` | `u8`, 72, stride `0x0c` | Free-play True Jedi: `INCOMPLETE=0`, `COMPLETE=1`. |
 | `area_save[0..71].minikit_complete` | `0x7830` | `u8`, 72, stride `0x0c` | Full-set reward: `INCOMPLETE=0`, `COMPLETE=1`. |
 | `area_save[0..71].minikit_count` | `0x7831` | `u8`, 72, stride `0x0c` | Stored area minikit count. |
 | `area_save[0..71].red_brick_collected` | `0x7832` | `u8`, 72, stride `0x0c` | `INCOMPLETE=0`, `COMPLETE=1`. |
-| `area_save[0..71].reserved_0x7` | `0x7833` | `u8`, 72, stride `0x0c` | Unknown. |
+| `area_save[0..71].challenge_complete` | `0x7833` | `u8`, 72, stride `0x0c` | Chapter blue-minikit challenge: `INCOMPLETE=0`, `COMPLETE=1`. |
 | `area_save[0..71].challenge_trial_time` | `0x7834` | `f32`, 72, stride `0x0c` | Stored challenge time in seconds. |
 | `episode_save[0..5].superstory_time_limit` | `0x7b8c` | `f32`, 6, stride `0x0c` | Stored Super Story time; initialized to 3600 seconds. |
 | `episode_save[0..5].superstory_score_target` | `0x7b90` | `i32`, 6, stride `0x0c` | Stored score; initialized to 100,000. |
-| `episode_save[0..5].flags` | `0x7b94` | `u32`, 6, stride `0x0c` | `NONE=0`, `SUPERSTORY_COMPLETE=1`; flags combine with `|`. |
+| `episode_save[0..5].superstory_complete` | `0x7b94` | `u8`, 6, stride `0x0c` | `INCOMPLETE=0`, `COMPLETE=1`; the game treats any nonzero byte as complete. |
+| `episode_save[0..5].reserved_0x9` | `0x7b95` | `bytes[3]`, 6, stride `0x0c` | Preserved bytes after completion; not completion flags. |
 
-Super Story has an explicit completion bit: bit 0 of `episode_save[].flags`. Challenge trials do
-not have a dedicated completion flag. The game initializes their stored times from `AREAS.TXT` and
-later compares the stored value with that configured value. `nusave list` therefore reports the
-stored challenge value without inferring a completion state.
+Super Story and chapter challenges have explicit completion bytes. They are separate from the
+character/vehicle bonus time trials: those initialize their stored time from `AREAS.TXT` and
+compare it with the configured target. `nusave` shows stored times exactly, including untouched
+20-minute or one-hour defaults, and never infers completion from a time value. Completion bytes
+are interpreted using the game's zero/nonzero check; their original numeric values remain
+available in raw output and editing controls.
 
 #### Collections and progress
 
 | Property | Payload offset | Type | Meaning / accepted symbolic values |
 | --- | ---: | --- | --- |
-| `shop_hint_purchased_bits` | `0x7bd4` | `bits96` | Purchased hints; no names are known, so use `BIT_0..BIT_95`. |
+| `shop_hint_purchased_bits` | `0x7bd4` | `bits96` | PC bits `0..13` are `hint_630..hint_643`; Android has no configured shop hints. Other bits use `BIT_n`. |
 | `shop_character_purchased_bits` | `0x7be0` | `bits128` | Purchased shop entries; named bits `0..89` are listed below. |
 | `extra_unlocked_bits` | `0x7bf0` | `bits64` | Unlocked extras; named bits `0..43` are listed below. |
-| `shop_gold_brick_purchased_bits` | `0x7bf8` | `bits32` | `GOLD_BRICK_0..GOLD_BRICK_13`; bits `14..31` remain `BIT_n`. |
-| `suit_flags` | `0x7bfc` | `u32` | `NONE=0`, `SHADOW=1`, `GLIDE=2`, `DEMOLITION=4`, `SONAR=8`, `WATER=16`, `TECHNOLOGY=32`, `MAGNET=64`, `ATTRACT=128`, `ALL=0xffffffff`. |
+| `shop_gold_brick_purchased_bits` | `0x7bf8` | `bits32` | PC: `GOLD_BRICK_0..GOLD_BRICK_13`; Android: `GOLD_BRICK_0..GOLD_BRICK_7`. Other bits remain `BIT_n`. |
+| `suit_flags` | `0x7bfc` | `u32` | Inherited suit-record indices: `NONE=0`, `BATMAN=1`, `SHADOW=2`, `GLIDE=4`, `DEMOLITION=8`, `SONAR=16`, `ROBIN=32`, `WATER=64`, `TECHNOLOGY=128`, `MAGNET=256`, `ATTRACT=512`, `ALL=0xffffffff`. |
 | `extra_purchased_bits` | `0x7c00` | `bits64` | Purchased extras; same named bits `0..43` as the unlock mask. |
-| `hint_completion_bits` | `0x7c08` | `bits192` | Two 96-bit tutorial-state banks; release-specific labels below. |
+| `hint_completion_bits` | `0x7c08` | PC `bits96`; Android `bits192` | One PC bank or two Android banks; release-specific labels below. |
 
-These fields and offsets are identical in Windows and Android. The following block exists only in
-Android:
+These start offsets are identical in Windows and Android; only tutorial storage has a different
+width. Suit bits index the ten retained Batman/Robin suit records, not the separate runtime
+ability flags. The default `0x21` therefore names the base Batman and Robin records. PC configures
+14 shop hints (IDs 630–643), of which 635–643 have a nonzero price. Purchased shop hints and
+displayed tutorial hints are independent masks.
 
-| Android-only property | Payload offset | Type | Meaning / accepted symbolic values |
-| --- | ---: | --- | --- |
-| `coins` | `0x7c20` | `u32` | Stored stud balance. |
-| `completion` | `0x7c24` | `u16` | Completion points, not a percentage; also feeds `slot_code`. |
-| `gold_bricks` | `0x7c26` | `u8` | Earned gold-brick total. |
-| `reward_flags` | `0x7c27` | `u8` | `NONE=0`, `100_PERCENT=1`, `ALL_GOLD_BRICKS=2`; flags combine with `|`. |
-| `hub_build_flags` | `0x7c28` | `u8` | `NONE=0`, `BUILD_0..BUILD_6=1<<n`, `LEVEL_BUILD=128`; flags combine with `|`. |
-| `indy_unlocked` | `0x7c29` | `u8` | `INCOMPLETE=0`, `COMPLETE=1`. |
-| `reserved_0x7c2a` | `0x7c2a` | `bytes[2]` | Unknown alignment bytes. |
+The progress record exists in both releases:
+
+| Property | Windows offset | Android offset | Type | Meaning / accepted symbolic values |
+| --- | ---: | ---: | --- | --- |
+| `coins` | `0x7c14` | `0x7c20` | `u32` | Stored stud balance. |
+| `completion` | `0x7c18` | `0x7c24` | `u16` | Stored completion points, not a percentage; also feeds `slot_code`. |
+| `gold_bricks` | `0x7c1a` | `0x7c26` | `u8` | Earned gold-brick total. |
+| `reward_flags` | `0x7c1b` | `0x7c27` | `u8` | `NONE=0`, `100_PERCENT=1`, `ALL_GOLD_BRICKS=2`; flags combine with `|`. |
+| `hub_build_flags` | `0x7c1c` | `0x7c28` | `u8` | `NONE=0`, `BUILD_0..BUILD_6=1<<n`, `LEVEL_BUILD=128`; flags combine with `|`. |
+| `indy_unlocked` | `0x7c1d` | `0x7c29` | `u8` | Indy/trailer state: `INCOMPLETE=0`, `COMPLETE=1`. |
+| `reserved_0x7c1e` / `reserved_0x7c2a` | `0x7c1e` | `0x7c2a` | `bytes[2]` | Unknown alignment bytes; property name reflects its variant offset. |
+
+The viewer reports these stored values. It does not recalculate completion points, gold bricks,
+or reward flags from other records. Such calculations require release-specific configuration
+and runtime fixups: for example, PC `FixUpAreas` excludes Lost Temple from completion points even
+though the raw PC asset lacks `no_completion_points` there. The audited retail PC maximum is 816
+points and 160 gold bricks; Android has different scoring, rewards, and store restrictions.
 
 The shared suffix resumes with accumulated gameplay time:
 
@@ -349,20 +376,22 @@ The shared suffix resumes with accumulated gameplay time:
 
 | Property | Windows offset | Android offset | Type / count | Meaning / accepted symbolic values |
 | --- | ---: | ---: | --- | --- |
-| `customizer.pieces[0..8]` | `0x7c24` | `0x7c30` | `i16`, 9, stride 2 | Primary piece indices in the engine's category order: hat/hair, head, weapon, arms, hands, cape, body, underpants, legs. |
+| `customizer.pieces[0..8]` | `0x7c24` | `0x7c30` | `u16`, 9, stride 2 | Primary piece indices in the engine's category order: hat/hair, head, weapon, arms, hands, cape, body, underpants, legs. |
 | `customizer.field_0x12` | `0x7c36` | `0x7c42` | `bytes[2]` | Unknown. |
 | `customizer.primary_name` | `0x7c38` | `0x7c44` | `bytes[32]` | `text:` accepts at most 31 bytes and zero-pads. |
 | `customizer.primary_use_saved_name` | `0x7c58` | `0x7c64` | `u8` | `CHARACTER_DEFAULT=0`, `SAVED_NAME=1`. |
-| `customizer.field_0x35` | `0x7c59` | `0x7c65` | `bytes[3]` | Unknown. |
-| `customizer.secondary_pieces[0..8]` | `0x7c5c` | `0x7c68` | `i16`, 9, stride 2 | Secondary piece indices in the same category order. |
+| `customizer.primary_padding` | `0x7c59` | `0x7c65` | `bytes[3]` | Preserved padding at the end of the primary record. |
+| `customizer.secondary_pieces[0..8]` | `0x7c5c` | `0x7c68` | `u16`, 9, stride 2 | Secondary piece indices in the same category order. |
 | `customizer.field_0x4a` | `0x7c6e` | `0x7c7a` | `bytes[2]` | Unknown. |
 | `customizer.secondary_name` | `0x7c70` | `0x7c7c` | `bytes[32]` | `text:` accepts at most 31 bytes and zero-pads. |
 | `customizer.secondary_use_saved_name` | `0x7c90` | `0x7c9c` | `u8` | `CHARACTER_DEFAULT=0`, `SAVED_NAME=1`. |
-| `customizer.field_0x6d` | `0x7c91` | `0x7c9d` | `bytes[2]` | Unknown. |
-| `field_0x7c93` / `field_0x7c9f` | `0x7c93` | `0x7c9f` | `u8` | Unknown byte before mission storage; property name reflects its physical variant offset. |
+| `customizer.secondary_padding` | `0x7c91` | `0x7c9d` | `bytes[3]` | Preserved padding at the end of the secondary record. |
 | `mission_save.best_times[0..19]` | `0x7c94` | `0x7ca0` | `f32`, 20, stride 4 | Mission best times in seconds. |
 | `mission_save.completed[0..19]` | `0x7ce4` | `0x7cf0` | `u8`, 20, stride 1 | `INCOMPLETE=0`, `COMPLETE=1`. |
 | `character_save[0..339]` | `0x7cf8` | `0x7d04` | `u8`, 340, stride 1 | `NONE=0`, `AVAILABLE=1`, `UNLOCKED=2`; flags combine with `|`. |
+
+Both releases store two complete `0x38`-byte custom-character records. Piece indices are unsigned;
+unknown values through 65535 are preserved rather than wrapped or clamped to the configured list.
 
 Character-state indices map to the `file` identifiers in `CHARS/CHARS.TXT`. The mappings were
 extracted independently from the PC `GAME.DAT` and Android OBB with
@@ -377,15 +406,26 @@ extracted independently from the PC `GAME.DAT` and Android OBB with
 | 318 | `raft` | `raft` |
 | 319–339 | unnamed reserved entries | unnamed reserved entries |
 
+Names are not necessarily unique. PC ID 2 is `zamwesell` and ID 305 is `ZamWesell`;
+the native case-insensitive `CharIDFromName` search returns the first match. Keep numeric IDs and
+entry order intact instead of building a last-wins name-to-ID dictionary.
+
 The complete release-specific mappings live under [`data/pc`](data/pc) and
-[`data/android`](data/android). Each folder contains its own character, area, level, and shop-entry
-sequence, so there is no implicit patching of one release's IDs into the other.
+[`data/android`](data/android). Each folder contains its own character, area, level, tutorial, and
+shop-character sequence, so there is no implicit patching of one release's IDs into the other.
 
 The same comparison was made for `CHARS/CUSTOMISER.TXT`, `LEVELS/AREAS.TXT`,
 `LEVELS/LEVELS.TXT`, and `LEVELS/MISSIONS.TXT`. All 433 customizer piece indices and all 20
-mission indices are identical. Area IDs 0–69 and level IDs 0–349 are identical; Android alone adds
-area 70 `Vehicles` and level 350 `Platform`. `nusave` selects these names from the detected payload
-variant. The names only label stored indices; it never normalizes or converts the underlying save
+mission indices are identical. The area and level catalogs reproduce the loaders' acceptance
+rules: exclude `test_area` and `test_level` records, require valid directory/file names, and accept
+only areas with resolved levels. Counting every `file` directive would incorrectly include two
+test areas and fifteen test levels. Like `NuFParGetWord`, extraction accepts the two unterminated
+quoted names `Jedi_Outro` and `Jedi_Status` through end of line. PC has 68 configured areas and
+335 levels; Android has 69 areas and 336 levels. Lost Temple is area 67 / level 334 in both.
+Android adds area 68 `Vehicles` and
+level 335 `Platform`. Storage capacity remains 72 areas and 366 levels; unnamed slots stay
+addressable. `nusave` selects these names from the detected payload variant. The names only label
+stored indices; it never normalizes or converts the underlying save
 values.
 
 ### Options payload schema (`SUPEROPTIONS_s`, `0x18` bytes)
@@ -485,10 +525,8 @@ Bits 0–43 are common. PC additionally names bit 44 `adaptivedifficulty`; the W
 45-entry cheat table and an observed save both confirm it. Android bits 44–63 and PC bits 45–63
 use `BIT_n`.
 
-`hint_completion_bits` stores two 96-bit banks. Android code identifies them as console bit `n`
-and touch bit `96 + n`. The PC payload has the same two banks, but the precise PC input-mode role
-of each bank has not been established from the stripped executable, so `nusave` deliberately calls
-them `bank0` and `bank1` instead of pretending they are touch controls.
+Android `hint_completion_bits` stores two 96-bit banks: console bit `n` and touch bit `96 + n`.
+Each uses the following 54-entry table:
 
 ```text
  0 hint_356                18 Tag_650              36 PlayerButton_1525
@@ -512,8 +550,17 @@ them `bank0` and `bank1` instead of pretending they are touch controls.
 ```
 
 For example, Android tutorial 3 is `console.AutoJump_1568` at bit 3 and
-`touch.AutoJump_1568` at bit 99; PC uses `bank0.AutoJump_1568` and
-`bank1.AutoJump_1568`. Bits 54–95 and 150–191 use `BIT_n`.
+`touch.AutoJump_1568` at bit 99. Bits 54–95 and 150–191 use `BIT_n`.
+
+PC has a single 96-bit bank with its own 64-entry table, without a control-mode prefix.
+For example, bit 2 is `Tag_602`, while Android bit 2 is `console.Lever_1548`. PC bits 64–95
+use `BIT_n`. Its table comes from the original executable at `0x7f7a88`: 65 records of 28 bytes,
+including the final `-1` terminator. Hint IDs and callback pointers were checked against the
+original bytes. Names combine a known callback with its text ID, or use `hint_ID` where no
+callback is configured; they do not fabricate a description for an unnamed hint.
+
+The full PC sequence is in [`data/pc/tutorial_names.txt`](data/pc/tutorial_names.txt), and the
+Android sequence in [`data/android/tutorial_names.txt`](data/android/tutorial_names.txt).
 
 ### Compatibility property aliases
 
@@ -528,6 +575,22 @@ The editor also accepts names emitted by older versions of the original harness:
 | `field_0x7bf8` | `shop_gold_brick_purchased_bits` |
 | `customizer.primary_name_unlocked` | `customizer.primary_use_saved_name` |
 | `customizer.secondary_name_unlocked` | `customizer.secondary_use_saved_name` |
+| `area_save[N].story_buildup_complete` | `area_save[N].story_true_jedi_complete` |
+| `area_save[N].freeplay_buildup_complete` | `area_save[N].freeplay_true_jedi_complete` |
+| `area_save[N].reserved_0x7` | `area_save[N].challenge_complete` |
+| `customizer.field_0x35` | `customizer.primary_padding` |
+| `customizer.field_0x6d` | First two bytes of `customizer.secondary_padding` |
+| `field_0x7c93` (PC) / `field_0x7c9f` (Android) | Last byte of `customizer.secondary_padding` |
+
+`episode_save[N].flags` remains an exact legacy `u32` view over the completion byte and the
+following three reserved bytes. It accepts the old `SUPERSTORY_COMPLETE=1` name, but canonical
+export separates `superstory_complete` from `reserved_0x9` so changing completion preserves padding.
+
+Old PC `bank0`/`bank1` tutorial exports used the wrong table and width. Those names are rejected;
+re-export the original save with this version. Bit 96 and higher cannot be assigned to PC
+tutorials. Customizer pieces now enforce their native `u16` range: an old signed representation
+such as `-1` must use the equivalent unsigned value `65535`. Suit symbols now refer to record
+indices, so re-export old symbolic parameter files from their original saves when updating.
 
 ### Derived trailer
 
@@ -538,16 +601,17 @@ The checksum is the wrapping sum of every little-endian `u32` in the payload, st
 checksum = 0x005c0999 + Σ payload_u32  (mod 2^32)
 ```
 
-For Android game saves, `slot_code` is the 16-bit completion field interpreted as signed and
-sign-extended to 32 bits. For example, completion `0x8001` produces `0xffff8001`. Android options
-use `0xffffffff`. Windows writes its `MakeSaveHash` callback result in the same footer position,
-but the Windows payload has no copy of the later Android completion field. `nusave` therefore
-reports the stored Windows slot code and preserves it when refreshing the checksum.
+For Windows game saves, `slot_code` is the unsigned 16-bit completion value at payload `0x7c18`,
+zero-extended to 32 bits. The original `MakeSaveHash` at `0x428b80` uses `MOVZX` to read it.
+Android reads completion at `0x7c24` through a signed 16-bit callback and sign-extends the result.
+Thus completion `0x8001` produces PC `0x00008001` or Android `0xffff8001`. Android options use
+`0xffffffff`. Both game variants refresh their footer from their stored completion value;
+`--keep-derived` preserves an existing footer, including an intentionally inconsistent one.
 
 ## Implementation notes
 
 The crate has a conventional library/binary split. `src/lib.rs` exposes format parsing, typed
-properties, transactional assignment, derived-field calculation, text views, and atomic writing.
+properties, transactional assignment, derived-field calculation, text views, and reader/writer I/O.
 `src/main.rs` contains only the `clap` command model, parameter-file input, terminal I/O, and
 command dispatch. Consumers can therefore use `nusave` as a Rust library without pulling command-line
 behavior into their application.
@@ -561,7 +625,8 @@ offsets from the same structures used to access the data, reducing duplicated fo
 [`clap`](https://docs.rs/clap/) provides the complete command-line parser and generated help.
 [`anstyle`](https://docs.rs/anstyle/) supplies the terminal styling without coupling the data model
 to a particular renderer. [`thiserror`](https://docs.rs/thiserror/) defines structured public
-errors for parsing, reading, assigning, editing, and atomic writing. Their messages identify the
+errors for parsing, reading, assigning, and editing; the binary also uses it for atomic writing.
+Their messages identify the
 bad header field, path, property, value, expected range or syntax, and underlying I/O error as
 appropriate. No C/C++ library or game asset is needed at runtime.
 
@@ -574,9 +639,16 @@ cargo test
 cargo build --release
 ```
 
-The integration suite exercises the interpreted summary, typed edits, derived values, wide named
-masks, invalid-input rollback, Windows/Android game variants, Android options, non-destructive output,
-and lossless `list --raw` → `--params` reconstruction with opaque and non-canonical float data.
+The integration suite constructs both game variants from independently specified native offsets.
+It checks that canonical properties cover every byte exactly once, tutorial edits cannot touch
+progress, PC rejects out-of-range masks and Android names, and progress edits affect only their
+documented bytes. It also covers platform-specific footer extension, both custom-character records,
+nonzero completion bytes, padding-preserving legacy aliases, native catalog boundaries, and
+platform-specific shop masks. Random-pattern payloads with odd-length opaque prefixes and NaNs
+must survive raw export/import byte for byte. CLI tests cover atomic rollback and non-destructive
+output; library tests cover reader limits and graphical editor controls. Original PC/Android save
+copies are additionally checked locally; proprietary game binaries, assets, and saves are not
+required by the test suite or committed to the repository.
 
 ## License
 

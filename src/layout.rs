@@ -1,4 +1,5 @@
-use zerocopy::byteorder::little_endian::{F32, I16, I32, U16, U32};
+use std::mem::offset_of;
+use zerocopy::byteorder::little_endian::{F32, I32, U16, U32};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
@@ -49,12 +50,12 @@ pub struct LevelSave {
 pub struct AreaSave {
     pub complete: u8,
     pub area_complete: u8,
-    pub story_buildup_complete: u8,
-    pub freeplay_buildup_complete: u8,
+    pub story_true_jedi_complete: u8,
+    pub freeplay_true_jedi_complete: u8,
     pub minikit_complete: u8,
     pub minikit_count: u8,
     pub red_brick_collected: u8,
-    pub reserved_0x7: u8,
+    pub challenge_complete: u8,
     pub challenge_trial_time: F32,
 }
 
@@ -63,22 +64,18 @@ pub struct AreaSave {
 pub struct EpisodeSave {
     pub superstory_time_limit: F32,
     pub superstory_score_target: I32,
-    pub flags: U32,
+    pub superstory_complete: u8,
+    pub reserved_0x9: [u8; 3],
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 pub struct CustomiseSave {
-    pub pieces: [I16; 9],
+    pub pieces: [U16; 9],
     pub field_0x12: [u8; 2],
-    pub primary_name: [u8; 32],
-    pub primary_use_saved_name: u8,
-    pub field_0x35: [u8; 3],
-    pub secondary_pieces: [I16; 9],
-    pub field_0x4a: [u8; 2],
-    pub secondary_name: [u8; 32],
-    pub secondary_use_saved_name: u8,
-    pub field_0x6d: [u8; 2],
+    pub name: [u8; 32],
+    pub use_saved_name: u8,
+    pub padding: [u8; 3],
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
@@ -105,27 +102,25 @@ pub struct GameSavePrefix {
     pub shop_gold_brick_purchased_bits: U32,
     pub suit_flags: U32,
     pub extra_purchased_bits: [U32; 2],
-    pub hint_completion_bits: [U32; 6],
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
-pub struct AndroidProgressSummary {
+pub struct ProgressSummary {
     pub coins: U32,
     pub completion: U16,
     pub gold_bricks: u8,
     pub reward_flags: u8,
     pub hub_build_flags: u8,
     pub indy_unlocked: u8,
-    pub reserved_0x7c2a: [u8; 2],
+    pub reserved: [u8; 2],
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 pub struct GameSaveSuffix {
     pub gameplay_seconds: F32,
-    pub customizer: CustomiseSave,
-    pub field_after_customizer: u8,
+    pub customizer: [CustomiseSave; 2],
     pub mission: MissionSave,
     pub characters: [u8; 0x154],
 }
@@ -134,16 +129,18 @@ pub struct GameSaveSuffix {
 #[repr(C)]
 pub struct GameSave {
     pub prefix: GameSavePrefix,
-    pub android_summary: AndroidProgressSummary,
+    pub hint_completion_bits: [U32; 6],
+    pub progress: ProgressSummary,
     pub suffix: GameSaveSuffix,
 }
 
-/// Original Windows PC payload: the common prefix and suffix without the
-/// later 12-byte Android progress-summary block between them.
+/// Windows stores one tutorial bank; Android adds a second bank before progress.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 #[repr(C)]
 pub struct WindowsGameSave {
     pub prefix: GameSavePrefix,
+    pub hint_completion_bits: [U32; 3],
+    pub progress: ProgressSummary,
     pub suffix: GameSaveSuffix,
 }
 
@@ -168,12 +165,28 @@ const _: () = {
     assert!(size_of::<LevelSave>() == 0x54);
     assert!(size_of::<AreaSave>() == 0x0c);
     assert!(size_of::<EpisodeSave>() == 0x0c);
-    assert!(size_of::<CustomiseSave>() == 0x6f);
+    assert!(size_of::<CustomiseSave>() == 0x38);
+    assert!(offset_of!(CustomiseSave, name) == 0x14);
+    assert!(offset_of!(CustomiseSave, use_saved_name) == 0x34);
     assert!(size_of::<MissionSave>() == 0x64);
-    assert!(size_of::<GameSavePrefix>() == 0x7c20);
-    assert!(size_of::<AndroidProgressSummary>() == 0x0c);
+    assert!(size_of::<GameSavePrefix>() == 0x7c08);
+    assert!(offset_of!(GameSavePrefix, levels) == 0x11);
+    assert!(offset_of!(GameSavePrefix, areas) == 0x782c);
+    assert!(offset_of!(GameSavePrefix, episodes) == 0x7b8c);
+    assert!(size_of::<ProgressSummary>() == 0x0c);
+    assert!(offset_of!(ProgressSummary, completion) == 4);
+    assert!(offset_of!(ProgressSummary, reserved) == 10);
     assert!(size_of::<GameSaveSuffix>() == 0x22c);
     assert!(size_of::<GameSave>() == 0x7e58);
     assert!(size_of::<WindowsGameSave>() == 0x7e4c);
+    assert!(offset_of!(WindowsGameSave, hint_completion_bits) == 0x7c08);
+    assert!(offset_of!(WindowsGameSave, progress) == 0x7c14);
+    assert!(offset_of!(WindowsGameSave, suffix) == 0x7c20);
+    assert!(offset_of!(GameSave, hint_completion_bits) == 0x7c08);
+    assert!(offset_of!(GameSave, progress) == 0x7c20);
+    assert!(offset_of!(GameSave, suffix) == 0x7c2c);
+    assert!(offset_of!(GameSaveSuffix, customizer) == 4);
+    assert!(offset_of!(GameSaveSuffix, mission) == 0x74);
+    assert!(offset_of!(GameSaveSuffix, characters) == 0xd8);
     assert!(size_of::<SuperOptions>() == 0x18);
 };

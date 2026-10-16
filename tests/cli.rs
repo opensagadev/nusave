@@ -81,14 +81,20 @@ fn write_utf16_prefix(bytes: &mut [u8], offset: usize, value: &str) {
     }
 }
 
-fn convert_to_windows_save(bytes: &mut Vec<u8>) {
-    bytes.drain(HEADER + 0x7c20..HEADER + 0x7c2c);
-    write_utf16_prefix(bytes, 0x28, "LEGO® Star Wars™: The Complete Saga");
-    write_utf16_prefix(bytes, 0x828, "Save Slot 0");
-    write_utf16_prefix(bytes, 0x1828, "9/6/2026 3:44:24 AM");
+fn windows_save() -> Vec<u8> {
+    // Construct from native PC offsets, independently of the Android layout.
+    let mut bytes = vec![0; HEADER + WINDOWS_PAYLOAD + 8];
+    write_word(&mut bytes, 0, 0x52474d48);
+    write_word(&mut bytes, 4, 1);
+    write_word(&mut bytes, 8, HEADER as u32);
+    write_word(&mut bytes, HEADER + 0x7c14, 2090);
+    bytes[HEADER + 0x7c18..HEADER + 0x7c1a].copy_from_slice(&7u16.to_le_bytes());
+    write_utf16_prefix(&mut bytes, 0x28, "LEGO® Star Wars™: The Complete Saga");
+    write_utf16_prefix(&mut bytes, 0x828, "Save Slot 0");
+    write_utf16_prefix(&mut bytes, 0x1828, "9/6/2026 3:44:24 AM");
     bytes[HEADER + 0x7c20..HEADER + 0x7c24].copy_from_slice(&120.0f32.to_le_bytes());
     bytes[HEADER + 0x7cf8 + 339] = 3;
-    write_word(bytes, HEADER + WINDOWS_PAYLOAD + 4, 7);
+    write_word(&mut bytes, HEADER + WINDOWS_PAYLOAD + 4, 7);
     let checksum = bytes[HEADER..HEADER + WINDOWS_PAYLOAD]
         .as_chunks::<4>()
         .0
@@ -96,7 +102,8 @@ fn convert_to_windows_save(bytes: &mut Vec<u8>) {
         .fold(0x5c0999u32, |sum, chunk| {
             sum.wrapping_add(u32::from_le_bytes(*chunk))
         });
-    write_word(bytes, HEADER + WINDOWS_PAYLOAD, checksum);
+    write_word(&mut bytes, HEADER + WINDOWS_PAYLOAD, checksum);
+    bytes
 }
 
 #[test]
@@ -111,7 +118,7 @@ fn creates_game_saves_and_applies_typed_edits() {
             "area_save[2].minikit_count=10",
             "episode_save[1].superstory_time_limit=12.5",
             "customizer.primary_name=text:TEST",
-            "customizer.secondary_pieces[8]=-123",
+            "customizer.secondary_pieces[8]=65413",
             "character_save[339]=3",
         ],
     );
@@ -245,9 +252,7 @@ fn supports_options_saves_and_non_destructive_output() {
 #[test]
 fn reads_and_edits_the_shared_windows_precursor_layout() {
     let directory = TestDirectory::new();
-    success(&directory, &["create"]);
-    let mut bytes = fs::read(directory.save()).unwrap();
-    convert_to_windows_save(&mut bytes);
+    let bytes = windows_save();
     fs::write(directory.save(), &bytes).unwrap();
 
     let listed = String::from_utf8(success(&directory, &["list"]).stdout).unwrap();
@@ -255,11 +260,12 @@ fn reads_and_edits_the_shared_windows_precursor_layout() {
     assert!(listed.contains("Application  LEGO® Star Wars™: The Complete Saga"));
     assert!(listed.contains("Slot label   Save Slot 0"));
     assert!(listed.contains("Saved at     9/6/2026 3:44:24 AM"));
-    assert!(listed.contains("Stored slot code  7"));
+    assert!(listed.contains("Completion points"));
     assert!(listed.contains("Gameplay time"));
     assert!(listed.contains("2m 00s"));
     assert!(listed.contains("Unknown character (ID 339)"));
-    assert!(!listed.contains("  Studs"));
+    assert!(listed.contains("  Studs"));
+    assert!(listed.contains("2,090"));
 
     success(
         &directory,
@@ -269,7 +275,7 @@ fn reads_and_edits_the_shared_windows_precursor_layout() {
             "character_save[339]=UNLOCKED",
             "shop_character_purchased_bits=macewindu_ep3",
             "extra_purchased_bits=adaptivedifficulty",
-            "hint_completion_bits=bank1.GizForce_601",
+            "hint_completion_bits=GizForce_601",
         ],
     );
     let edited = fs::read(directory.save()).unwrap();
@@ -285,16 +291,16 @@ fn reads_and_edits_the_shared_windows_precursor_layout() {
     let listed = String::from_utf8(success(&directory, &["list"]).stdout).unwrap();
     assert!(listed.contains("Purchased characters   macewindu_ep3"));
     assert!(listed.contains("Purchased extras       adaptivedifficulty"));
-    assert!(listed.contains("Completed tutorials    bank1.GizForce_601"));
+    assert!(listed.contains("Completed tutorials    GizForce_601"));
     let raw = String::from_utf8(success(&directory, &["list", "--raw"]).stdout).unwrap();
     assert!(raw.contains("shop_character_purchased_bits=macewindu_ep3"));
     assert!(raw.contains("extra_purchased_bits=adaptivedifficulty"));
-    assert!(raw.contains("hint_completion_bits=bank1.GizForce_601"));
+    assert!(raw.contains("hint_completion_bits=GizForce_601"));
 
     let before_invalid = edited.clone();
-    let invalid = run(&directory, &["edit", "coins=1"]);
+    let invalid = run(&directory, &["edit", "hint_completion_bits=BIT_96"]);
     assert!(!invalid.status.success());
-    assert!(String::from_utf8_lossy(&invalid.stderr).contains("unknown save property `coins`"));
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("hint_completion_bits"));
     assert_eq!(fs::read(directory.save()).unwrap(), before_invalid);
 }
 
@@ -341,7 +347,7 @@ fn list_defaults_to_a_compact_interpreted_summary() {
             "shop_character_purchased_bits=gonkdroid|wookie",
             "area_save[2].complete=COMPLETE",
             "area_save[8].challenge_trial_time=1200",
-            "episode_save[1].flags=SUPERSTORY_COMPLETE",
+            "episode_save[1].superstory_complete=COMPLETE",
             "level_save[2].arcade_flags=BATTLE",
             "mission_save.best_times[0]=91",
             "mission_save.completed[0]=COMPLETE",

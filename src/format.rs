@@ -1,4 +1,4 @@
-use crate::layout::{GameSave, SaveHeader};
+use crate::layout::{GameSave, SaveHeader, WindowsGameSave};
 use std::io::{self, Read, Write};
 use thiserror::Error;
 use zerocopy::FromBytes;
@@ -206,8 +206,9 @@ impl Save {
                 episode.superstory_score_target.set(100_000);
             }
             game.prefix.suit_flags.set(0x21);
-            game.suffix.customizer.primary_use_saved_name = 1;
-            game.suffix.customizer.secondary_use_saved_name = 1;
+            for custom in &mut game.suffix.customizer {
+                custom.use_saved_name = 1;
+            }
         }
         save.derive();
         save
@@ -244,13 +245,18 @@ impl Save {
                     &self.bytes[self.payload..self.payload + self.payload_size],
                 )
                 .expect("validated Android game payload");
-                let completion = game.android_summary.completion.get();
+                let completion = game.progress.completion.get();
                 (completion as i16 as i32) as u32
             }
-            // The PC payload has no copy of the completion value used to make
-            // its slot code. Preserve the real stored value when other fields
-            // are edited instead of inventing one.
-            SaveKind::WindowsGame => self.read_u32(self.bytes.len() - 4),
+            SaveKind::WindowsGame => {
+                let game = WindowsGameSave::ref_from_bytes(
+                    &self.bytes[self.payload..self.payload + self.payload_size],
+                )
+                .expect("validated Windows game payload");
+                // Native MakeSaveHash (0x428b80) uses MOVZX, unlike Android's
+                // signed 16-bit save callback.
+                u32::from(game.progress.completion.get())
+            }
             SaveKind::AndroidOptions => u32::MAX,
         };
         self.write_u32(self.bytes.len() - 4, slot_code);

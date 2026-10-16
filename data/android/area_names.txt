@@ -65,7 +65,5 @@ NB_Kamino
 NB_Kashyyyk
 NB_Dagobah
 Map
-glyntestarea
-JimTest
 LostTemple
 Vehicles

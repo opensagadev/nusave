@@ -2,63 +2,10 @@ use crate::format::SaveKind;
 
 const WINDOWS_SHOP_CHARACTER_NAMES: &str = include_str!("../data/pc/shop_character_names.txt");
 const ANDROID_SHOP_CHARACTER_NAMES: &str = include_str!("../data/android/shop_character_names.txt");
+const WINDOWS_SHOP_HINT_NAMES: &str = include_str!("../data/pc/shop_hint_names.txt");
 
-pub const TUTORIAL_HINT_BITS: &[(&str, usize)] = &[
-    ("hint_356", 0),
-    ("GizForce_601", 1),
-    ("Lever_1548", 2),
-    ("AutoJump_1568", 3),
-    ("AutoJump_1569", 4),
-    ("GizBuildIts_604", 5),
-    ("Attack_631", 6),
-    ("Dodge_613", 7),
-    ("Dodge_1501", 8),
-    ("ZipUps_610", 9),
-    ("Tag_602", 10),
-    ("Push_615", 11),
-    ("Teleport_616", 12),
-    ("GizPanel_617", 13),
-    ("GizPanel_618", 14),
-    ("Tag_605", 15),
-    ("Tag_606", 16),
-    ("Tag_611", 17),
-    ("Tag_650", 18),
-    ("Tag_651", 19),
-    ("ShinyMetal_643", 20),
-    ("SmartBomb_1505", 21),
-    ("GizPanel_607", 22),
-    ("GizPanel_608", 23),
-    ("GizPanel_609", 24),
-    ("Shop_1516", 25),
-    ("Shop_1515", 26),
-    ("Shop_1514", 27),
-    ("DragBomb_1518", 28),
-    ("DragBomb_654", 29),
-    ("Move_1521", 30),
-    ("Move_1523", 31),
-    ("Jump_1540", 32),
-    ("Move_1522", 33),
-    ("Jump_1542", 34),
-    ("PlayerButton_1524", 35),
-    ("PlayerButton_1525", 36),
-    ("Jump_1544", 37),
-    ("Jump_1546", 38),
-    ("HoldTag_1526", 39),
-    ("UnlockHubStuff_1561", 40),
-    ("UnlockHubStuff_1562", 41),
-    ("UnlockHubStuff_1563", 42),
-    ("Tag_649", 43),
-    ("VehicleStuff_1559", 44),
-    ("ShinyMetal_1565", 45),
-    ("ShinyMetal_696", 46),
-    ("Teleport_1570", 47),
-    ("Sith_1571", 48),
-    ("GizPanel_1572", 49),
-    ("GizPanel_1573", 50),
-    ("HatMachine_1575", 51),
-    ("HatMachine_1576", 52),
-    ("Jump_1577", 53),
-];
+const WINDOWS_TUTORIAL_NAMES: &str = include_str!("../data/pc/tutorial_names.txt");
+const ANDROID_TUTORIAL_NAMES: &str = include_str!("../data/android/tutorial_names.txt");
 
 pub const EXTRA_NAMES: &[&str] = &[
     "extratoggle",
@@ -156,7 +103,15 @@ pub fn character_name(kind: SaveKind, id: usize) -> Option<&'static str> {
         .nth(id)
 }
 
-pub fn customizer_piece(category: usize, index: i16) -> Option<CustomizerPiece> {
+pub fn tutorial_names(kind: SaveKind) -> impl Iterator<Item = &'static str> {
+    names_for_kind(kind, WINDOWS_TUTORIAL_NAMES, ANDROID_TUTORIAL_NAMES).lines()
+}
+
+pub fn shop_hint_names(kind: SaveKind) -> impl Iterator<Item = &'static str> {
+    names_for_kind(kind, WINDOWS_SHOP_HINT_NAMES, "").lines()
+}
+
+pub fn customizer_piece(category: usize, index: u16) -> Option<CustomizerPiece> {
     let category = [
         "hathair",
         "head",
@@ -169,7 +124,7 @@ pub fn customizer_piece(category: usize, index: i16) -> Option<CustomizerPiece> 
         "legs",
     ]
     .get(category)?;
-    let index = usize::try_from(index).ok()?;
+    let index = usize::from(index);
     CUSTOMIZER_PIECES
         .lines()
         .filter_map(|line| {
@@ -201,7 +156,8 @@ pub fn mission_name(index: usize) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        area_name, character_name, customizer_piece, level_name, mission_name, shop_character_names,
+        area_name, character_name, customizer_piece, level_name, mission_name,
+        shop_character_names, tutorial_names,
     };
     use crate::format::SaveKind;
 
@@ -230,13 +186,17 @@ mod tests {
     #[test]
     fn configured_save_indices_have_game_data_names() {
         assert_eq!(area_name(SaveKind::WindowsGame, 0), Some("Negotiations"));
-        assert_eq!(area_name(SaveKind::WindowsGame, 69), Some("LostTemple"));
-        assert_eq!(area_name(SaveKind::WindowsGame, 70), None);
-        assert_eq!(area_name(SaveKind::AndroidGame, 70), Some("Vehicles"));
+        assert_eq!(area_name(SaveKind::WindowsGame, 67), Some("LostTemple"));
+        assert_eq!(area_name(SaveKind::WindowsGame, 68), None);
+        assert_eq!(area_name(SaveKind::AndroidGame, 68), Some("Vehicles"));
+        assert_eq!(area_name(SaveKind::AndroidGame, 69), None);
         assert_eq!(level_name(SaveKind::WindowsGame, 0), Some("titles"));
-        assert_eq!(level_name(SaveKind::WindowsGame, 349), Some("LostTemple_A"));
-        assert_eq!(level_name(SaveKind::WindowsGame, 350), None);
-        assert_eq!(level_name(SaveKind::AndroidGame, 350), Some("Platform"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 91), Some("Jedi_Outro"));
+        assert_eq!(level_name(SaveKind::AndroidGame, 92), Some("Jedi_Status"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 334), Some("LostTemple_A"));
+        assert_eq!(level_name(SaveKind::WindowsGame, 335), None);
+        assert_eq!(level_name(SaveKind::AndroidGame, 335), Some("Platform"));
+        assert_eq!(level_name(SaveKind::AndroidGame, 336), None);
         assert_eq!(mission_name(0), Some("QuiGonJinn"));
         assert_eq!(mission_name(19), Some("hansolo"));
         assert_eq!(mission_name(20), None);
@@ -248,7 +208,30 @@ mod tests {
         assert_eq!(customizer_piece(6, 49).unwrap().name, "Body_50");
         assert_eq!(customizer_piece(8, 34).unwrap().name, "leg_35");
         assert_eq!(customizer_piece(8, 35), None);
-        assert_eq!(customizer_piece(0, -1), None);
+        assert_eq!(customizer_piece(0, u16::MAX), None);
+    }
+
+    #[test]
+    fn tutorials_follow_each_native_table() {
+        assert_eq!(tutorial_names(SaveKind::WindowsGame).count(), 64);
+        assert_eq!(tutorial_names(SaveKind::AndroidGame).count(), 54);
+        assert_eq!(
+            tutorial_names(SaveKind::WindowsGame).nth(2),
+            Some("Tag_602")
+        );
+        assert_eq!(
+            tutorial_names(SaveKind::WindowsGame).nth(63),
+            Some("IndyUnlocked_1447")
+        );
+        assert_eq!(
+            tutorial_names(SaveKind::AndroidGame).nth(2),
+            Some("Lever_1548")
+        );
+        assert_eq!(character_name(SaveKind::WindowsGame, 2), Some("zamwesell"));
+        assert_eq!(
+            character_name(SaveKind::WindowsGame, 305),
+            Some("ZamWesell")
+        );
     }
 
     #[test]
